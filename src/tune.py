@@ -8,7 +8,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 import torch
 
@@ -36,53 +36,93 @@ def _cleanup_cuda():
         torch.cuda.empty_cache()
 
 
-def _save_study_results(study, output_dir: Path, metric: str, max_epochs: int) -> Dict:
+def _atomic_replace(path: Path, writer: Callable[[Path], None]):
+    tmp_path = path.with_suffix(f"{path.suffix}.tmp.{os.getpid()}")
+    writer(tmp_path)
+    os.replace(tmp_path, path)
+
+
+def _complete_trials(study):
+    return [
+        trial for trial in study.trials
+        if trial.state.name == "COMPLETE" and trial.value is not None
+    ]
+
+
+def _save_study_results(
+    study,
+    output_dir: Path,
+    metric: str,
+    max_epochs: int,
+    quiet: bool = False,
+) -> Dict:
     output_dir.mkdir(parents=True, exist_ok=True)
+    complete_trials = _complete_trials(study)
+    best_trial = max(complete_trials, key=lambda trial: trial.value) if complete_trials else None
 
     best = {
         "metric": metric,
-        "best_value": study.best_value,
-        "best_trial": study.best_trial.number,
-        "best_params": study.best_params,
+        "best_value": best_trial.value if best_trial else None,
+        "best_trial": best_trial.number if best_trial else None,
+        "best_params": best_trial.params if best_trial else {},
         "max_epochs_per_trial": max_epochs,
         "n_trials": len(study.trials),
+        "n_complete_trials": len(complete_trials),
     }
 
     best_path = output_dir / "optuna_best_params.json"
-    with open(best_path, "w", encoding="utf-8") as f:
-        json.dump(best, f, ensure_ascii=False, indent=2)
+    _atomic_replace(
+        best_path,
+        lambda tmp: tmp.write_text(
+            json.dumps(best, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        ),
+    )
 
     trials_path = output_dir / "optuna_trials.csv"
     param_names = sorted({name for trial in study.trials for name in trial.params})
     user_attr_names = sorted({name for trial in study.trials for name in trial.user_attrs})
     fieldnames = ["number", "state", "value"] + param_names + user_attr_names
-    with open(trials_path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for trial in study.trials:
-            row = {
-                "number": trial.number,
-                "state": trial.state.name,
-                "value": trial.value,
-            }
-            row.update(trial.params)
-            row.update(trial.user_attrs)
-            writer.writerow(row)
 
-    print(f"\n最佳参数已保存: {best_path}")
-    print(f"全部 trial 记录已保存: {trials_path}")
+    def write_trials(tmp_path: Path):
+        with open(tmp_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for trial in study.trials:
+                row = {
+                    "number": trial.number,
+                    "state": trial.state.name,
+                    "value": trial.value,
+                }
+                row.update(trial.params)
+                row.update(trial.user_attrs)
+                writer.writerow(row)
+
+    _atomic_replace(trials_path, write_trials)
+
+    if not quiet:
+        print(f"\n最佳参数已保存: {best_path}")
+        print(f"全部 trial 记录已保存: {trials_path}")
     return best
 
 
-def _print_best_config(best: Dict):
+def _print_best_config(
+    best: Dict,
+    config_target: str = "src/config.py",
+    train_command: str = "python -m src.pipeline --stage train --device cuda",
+):
     params = best["best_params"]
-    print("\n建议写入 src/config.py 的参数:")
+    if not params:
+        print("\n尚无完成的 trial，暂时没有可写回的最佳参数。")
+        return
+
+    print(f"\n建议写入 {config_target} 的参数:")
     print(f"BATCH_SIZE = {params['batch_size']}")
     print(f"LEARNING_RATE = {params['learning_rate']:.8g}")
     print(f"WEIGHT_DECAY = {params['weight_decay']:.8g}")
     print(f"WARMUP_RATIO = {params['warmup_ratio']:.8g}")
     print("\n然后完整训练:")
-    print("python -m src.pipeline --stage train --device cuda")
+    print(train_command)
 
 
 def run_tuning(
@@ -94,6 +134,12 @@ def run_tuning(
     study_name: str = "rumordetect-bert-hpo",
     storage: Optional[str] = None,
     output_dir: Path = RESULTS_DIR,
+    model_name: str = BERT_MODEL_NAME,
+    data_loader_fn: Optional[Callable] = None,
+    max_seq_length: int = MAX_SEQ_LENGTH,
+    eval_batch_size: int = EVAL_BATCH_SIZE,
+    config_target: str = "src/config.py",
+    train_command: str = "python -m src.pipeline --stage train --device cuda",
 ):
     """
     运行 Optuna 超参数搜索。
@@ -110,8 +156,10 @@ def run_tuning(
     from transformers import get_linear_schedule_with_warmup
 
     from src.bert_classifier import BertRumorClassifier
-    from src.data_processor import get_data_loaders
+    from src.data_processor import get_data_loaders as default_get_data_loaders
     from src.train import evaluate, set_seed, train_epoch
+
+    data_loader_fn = data_loader_fn or default_get_data_loaders
 
     if metric not in {"f1", "accuracy", "precision", "recall"}:
         raise ValueError("metric 只能是 f1 / accuracy / precision / recall")
@@ -131,6 +179,7 @@ def run_tuning(
     print(f"使用设备: {device}")
     if device.type == "cuda":
         print(f"CUDA 设备: {torch.cuda.get_device_name(device)}")
+    print(f"模型: {model_name}")
     print(f"目标指标: val_{metric}")
     print(f"trial 数量: {n_trials}")
     print(f"每个 trial 最大 epoch: {max_epochs}")
@@ -158,12 +207,12 @@ def run_tuning(
         model = optimizer = scheduler = train_loader = val_loader = None
 
         try:
-            train_loader, val_loader, _ = get_data_loaders(
+            train_loader, val_loader, _ = data_loader_fn(
                 batch_size=batch_size,
-                eval_batch_size=max(EVAL_BATCH_SIZE, batch_size),
-                max_len=MAX_SEQ_LENGTH,
+                eval_batch_size=max(eval_batch_size, batch_size),
+                max_len=max_seq_length,
             )
-            model = BertRumorClassifier(model_name=BERT_MODEL_NAME)
+            model = BertRumorClassifier(model_name=model_name)
             model.to(device)
 
             optimizer = AdamW(
@@ -212,6 +261,9 @@ def run_tuning(
             del model, optimizer, scheduler, train_loader, val_loader
             _cleanup_cuda()
 
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=1)
     sampler = optuna.samplers.TPESampler(seed=RANDOM_SEED)
     study = optuna.create_study(
@@ -222,22 +274,39 @@ def run_tuning(
         pruner=pruner,
         load_if_exists=bool(storage),
     )
-    study.optimize(objective, n_trials=n_trials, timeout=timeout)
 
-    complete_trials = [
-        trial for trial in study.trials
-        if trial.state == optuna.trial.TrialState.COMPLETE
-    ]
+    def save_progress_callback(study, trial):
+        snapshot = study
+        if storage:
+            snapshot = optuna.load_study(study_name=study.study_name, storage=storage)
+        best = _save_study_results(snapshot, output_dir, metric, max_epochs, quiet=True)
+        if best["best_trial"] is None:
+            print(f"进度已保存: trial {trial.number} 结束，暂无完成的 trial。")
+        else:
+            print(
+                f"进度已保存: trial {trial.number} 结束，"
+                f"当前最佳 trial {best['best_trial']} val_{metric}={best['best_value']:.4f}"
+            )
+
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        timeout=timeout,
+        callbacks=[save_progress_callback],
+    )
+
+    final_study = optuna.load_study(study_name=study.study_name, storage=storage) if storage else study
+    complete_trials = _complete_trials(final_study)
     if not complete_trials:
         raise RuntimeError("没有完成的 trial。请降低 batch size 搜索范围或检查训练环境。")
 
-    best = _save_study_results(study, Path(output_dir), metric, max_epochs)
+    best = _save_study_results(final_study, output_dir, metric, max_epochs)
     print("\n" + "=" * 60)
     print(f"最佳 trial: {best['best_trial']}")
     print(f"最佳 val_{metric}: {best['best_value']:.4f}")
     print(f"最佳参数: {best['best_params']}")
     print("=" * 60)
-    _print_best_config(best)
+    _print_best_config(best, config_target=config_target, train_command=train_command)
     return best
 
 
