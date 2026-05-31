@@ -51,6 +51,18 @@ def run_pipeline(args):
         from src.inference import single_prediction
         single_prediction(sample_text)
 
+    elif args.stage == "tune":
+        from src.tune import run_tuning
+        run_tuning(
+            device_name=device,
+            n_trials=args.trials,
+            max_epochs=args.tune_epochs,
+            metric=args.tune_metric,
+            timeout=args.tune_timeout,
+            study_name=args.study_name,
+            storage=args.storage,
+        )
+
     else:
         print(f"未知阶段: {args.stage}")
         sys.exit(1)
@@ -62,12 +74,41 @@ def main():
     )
     parser.add_argument(
         "--stage", type=str, default="train",
-        choices=["train", "eval", "predict", "all"],
-        help="运行阶段: train(训练) / eval(评估) / predict(单条预测) / all(全部)"
+        choices=["train", "eval", "predict", "all", "tune"],
+        help="运行阶段: train(训练) / eval(评估) / predict(单条预测) / all(全部) / tune(Optuna调参)"
     )
     parser.add_argument(
         "--text", type=str, default=None,
         help="预测模式下的推文文本"
+    )
+    parser.add_argument(
+        "--device", type=str, default=None,
+        help="运行设备: auto / cpu / cuda / cuda:0 / mps。也可用环境变量 RUMORDETECT_DEVICE 指定。"
+    )
+    parser.add_argument(
+        "--trials", type=int, default=20,
+        help="tune 模式下的 Optuna trial 数量。"
+    )
+    parser.add_argument(
+        "--tune-epochs", type=int, default=3,
+        help="tune 模式下每个 trial 的最大训练 epoch 数。"
+    )
+    parser.add_argument(
+        "--tune-metric", type=str, default="f1",
+        choices=["f1", "accuracy", "precision", "recall"],
+        help="tune 模式下优化的验证集指标。"
+    )
+    parser.add_argument(
+        "--tune-timeout", type=int, default=None,
+        help="tune 模式下的超时时间，单位秒。"
+    )
+    parser.add_argument(
+        "--study-name", type=str, default="rumordetect-bert-hpo",
+        help="tune 模式下的 Optuna study 名称。"
+    )
+    parser.add_argument(
+        "--storage", type=str, default=None,
+        help="tune 模式下的 Optuna storage URL，例如 sqlite:///results/optuna.db。"
     )
 
     args = parser.parse_args()

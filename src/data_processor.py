@@ -11,7 +11,7 @@ from pathlib import Path
 
 from src.config import (
     TRAIN_PATH, VAL_PATH, BERT_MODEL_NAME,
-    MAX_SEQ_LENGTH, BATCH_SIZE, RANDOM_SEED
+    MAX_SEQ_LENGTH, BATCH_SIZE, EVAL_BATCH_SIZE, RANDOM_SEED
 )
 
 
@@ -82,6 +82,7 @@ def get_data_loaders(
     val_path: Path = VAL_PATH,
     val_split: float = 0.8,
     batch_size: int = BATCH_SIZE,
+    eval_batch_size: int = EVAL_BATCH_SIZE,
     max_len: int = MAX_SEQ_LENGTH,
 ) -> Tuple[DataLoader, DataLoader, Dict]:
     """
@@ -127,7 +128,7 @@ def get_data_loaders(
     val_dataset = RumorDataset(val_texts_split, val_labels_split, tokenizer, max_len)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=eval_batch_size, shuffle=False)
 
     return train_loader, val_loader, extra_info
 
