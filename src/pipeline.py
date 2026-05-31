@@ -10,22 +10,38 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def resolve_device(device_name: str = None) -> str:
+    """在导入训练/推理重依赖前完成设备校验。"""
+    from src.config import describe_torch_devices, get_device
+
+    try:
+        return get_device(device_name)
+    except RuntimeError as exc:
+        print("\n设备检测失败:")
+        print(str(exc))
+        print("\nPyTorch 设备状态:")
+        print(describe_torch_devices())
+        sys.exit(1)
+
+
 def run_pipeline(args):
     """运行指定的流水线任务"""
+    device = resolve_device(args.device)
+
     if args.stage == "train":
         from src.train import main as train_main
-        train_main()
+        train_main(device_name=device)
 
     elif args.stage == "eval":
         from src.inference import evaluate_on_val
-        evaluate_on_val()
+        evaluate_on_val(device=device)
 
     elif args.stage == "predict":
         from src.inference import single_prediction
         if not args.text:
             print("错误: 请使用 --text 参数提供推文文本")
             sys.exit(1)
-        single_prediction(args.text)
+        single_prediction(args.text, device=device)
 
     elif args.stage == "all":
         print("=" * 60)
@@ -35,12 +51,12 @@ def run_pipeline(args):
         # 1. 训练
         print("\n>>> 阶段一: 模型训练")
         from src.train import main as train_main
-        train_main()
+        train_main(device_name=device)
 
         # 2. 评估
         print("\n>>> 阶段二: 验证集评估")
         from src.inference import evaluate_on_val
-        evaluate_on_val()
+        evaluate_on_val(device=device)
 
         # 3. 示例预测
         print("\n>>> 阶段三: 示例预测")
@@ -49,7 +65,7 @@ def run_pipeline(args):
             "in connection with the downtown shooting. More details to follow."
         )
         from src.inference import single_prediction
-        single_prediction(sample_text)
+        single_prediction(sample_text, device=device)
 
     else:
         print(f"未知阶段: {args.stage}")
@@ -68,6 +84,10 @@ def main():
     parser.add_argument(
         "--text", type=str, default=None,
         help="预测模式下的推文文本"
+    )
+    parser.add_argument(
+        "--device", type=str, default=None,
+        help="运行设备: auto / cpu / cuda / cuda:0 / mps。也可用环境变量 RUMORDETECT_DEVICE 指定。"
     )
 
     args = parser.parse_args()

@@ -60,7 +60,62 @@ LLM_TOP_P = 0.9              # top-p 采样
 
 # ==================== 通用配置 ====================
 RANDOM_SEED = 42
-def get_device():
+
+
+def get_device(requested: str = None) -> str:
+    """
+    获取训练/推理设备。
+
+    requested 可传入 "auto"、"cpu"、"cuda"、"cuda:0"、"mps"。
+    也可通过环境变量 RUMORDETECT_DEVICE 指定。
+    """
     import torch
-    return "cuda" if torch.cuda.is_available() else "cpu"
-DEVICE = get_device()
+
+    requested = requested or os.getenv("RUMORDETECT_DEVICE", "auto")
+    requested = requested.lower()
+
+    if requested in ("auto", ""):
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
+
+    if requested == "cpu":
+        return "cpu"
+
+    if requested.startswith("cuda"):
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "请求使用 CUDA，但当前 PyTorch 检测不到 CUDA。请检查是否安装了 CUDA 版 torch、"
+                "是否在分配到 GPU 的节点/容器中运行，以及 CUDA_VISIBLE_DEVICES 是否屏蔽了 GPU。"
+            )
+        return requested
+
+    if requested == "mps":
+        if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+            raise RuntimeError("请求使用 MPS，但当前 PyTorch 检测不到可用的 Apple GPU/MPS。")
+        return "mps"
+
+    raise ValueError(f"不支持的设备参数: {requested}")
+
+
+def describe_torch_devices() -> str:
+    """返回 PyTorch 看到的设备状态，便于定位服务器环境问题。"""
+    import torch
+
+    lines = [
+        f"torch: {torch.__version__}",
+        f"torch.version.cuda: {torch.version.cuda}",
+        f"cuda.is_available: {torch.cuda.is_available()}",
+        f"cuda.device_count: {torch.cuda.device_count()}",
+        f"CUDA_VISIBLE_DEVICES: {os.getenv('CUDA_VISIBLE_DEVICES', '<unset>')}",
+    ]
+    if torch.cuda.is_available():
+        for idx in range(torch.cuda.device_count()):
+            lines.append(f"cuda:{idx}: {torch.cuda.get_device_name(idx)}")
+    return "\n".join(lines)
+
+
+# 兼容旧代码的默认值；运行入口会在执行时重新调用 get_device() 读取参数/环境变量。
+DEVICE = get_device("auto")

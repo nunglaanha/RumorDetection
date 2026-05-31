@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.config import (
     BERT_MODEL_NAME, BERT_MODEL_PATH, BERT_TOKENIZER_PATH,
     FAISS_INDEX_PATH, EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
-    WARMUP_RATIO, EARLY_STOPPING_PATIENCE, RANDOM_SEED, MAX_SEQ_LENGTH
+    WARMUP_RATIO, EARLY_STOPPING_PATIENCE, RANDOM_SEED, MAX_SEQ_LENGTH,
+    get_device, describe_torch_devices
 )
 from src.data_processor import get_data_loaders, load_csv_data
 from src.bert_classifier import BertRumorClassifier, save_model
@@ -103,7 +104,7 @@ def evaluate(
     return metrics
 
 
-def main():
+def main(device_name: str = None):
     """主训练流程"""
     print("=" * 60)
     print("RumorDetect - BERT谣言检测模型训练")
@@ -111,8 +112,18 @@ def main():
 
     # 设置
     set_seed()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    try:
+        device = torch.device(get_device(device_name))
+    except RuntimeError as exc:
+        print("\n设备检测失败:")
+        print(str(exc))
+        print("\nPyTorch 设备状态:")
+        print(describe_torch_devices())
+        raise
+
     print(f"使用设备: {device}")
+    if device.type == "cuda":
+        print(f"CUDA 设备: {torch.cuda.get_device_name(device)}")
 
     # 1. 加载数据
     print("\n[1/5] 加载数据...")
