@@ -79,6 +79,19 @@ def run_pipeline(args):
             storage=args.storage,
         )
 
+    elif args.stage == "threshold":
+        from src.config import BERT_MODEL_PATH, VAL_PATH
+        from src.threshold_tune import tune_threshold
+        tune_threshold(
+            device_name=device,
+            model_path=args.model_path or str(BERT_MODEL_PATH),
+            data_path=args.data_path or VAL_PATH,
+            batch_size=args.batch_size,
+            threshold_min=args.threshold_min,
+            threshold_max=args.threshold_max,
+            threshold_step=args.threshold_step,
+        )
+
     else:
         print(f"未知阶段: {args.stage}")
         sys.exit(1)
@@ -90,8 +103,8 @@ def main():
     )
     parser.add_argument(
         "--stage", type=str, default="train",
-        choices=["train", "eval", "predict", "all", "tune"],
-        help="运行阶段: train(训练) / eval(评估) / predict(单条预测) / all(全部) / tune(Optuna调参)"
+        choices=["train", "eval", "predict", "all", "tune", "threshold"],
+        help="运行阶段: train(训练) / eval(评估) / predict(单条预测) / all(全部) / tune(Optuna调参) / threshold(阈值调优)"
     )
     parser.add_argument(
         "--text", type=str, default=None,
@@ -125,6 +138,30 @@ def main():
     parser.add_argument(
         "--storage", type=str, default=None,
         help="tune 模式下的 Optuna storage URL，例如 sqlite:///results/optuna.db。"
+    )
+    parser.add_argument(
+        "--model-path", type=str, default=None,
+        help="threshold 模式下的模型路径，默认使用 config.py 中的 BERT_MODEL_PATH。"
+    )
+    parser.add_argument(
+        "--data-path", type=str, default=None,
+        help="threshold 模式下的验证集 CSV 路径，默认使用 config.py 中的 VAL_PATH。"
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=32,
+        help="threshold 模式下的推理 batch size。"
+    )
+    parser.add_argument(
+        "--threshold-min", type=float, default=0.05,
+        help="threshold 模式下扫描的最小阈值。"
+    )
+    parser.add_argument(
+        "--threshold-max", type=float, default=0.95,
+        help="threshold 模式下扫描的最大阈值。"
+    )
+    parser.add_argument(
+        "--threshold-step", type=float, default=0.01,
+        help="threshold 模式下扫描的阈值步长。"
     )
 
     args = parser.parse_args()
