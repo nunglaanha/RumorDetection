@@ -20,7 +20,8 @@ def main(device_name: str = None):
         WARMUP_RATIO, describe_torch_devices, get_device
     )
     from Bertweet.data_processor import get_data_loaders
-    from src.bert_classifier import BertRumorClassifier, save_model
+    from Bertweet.classifier import BertweetRumorClassifier
+    from src.bert_classifier import save_model
     from src.train import evaluate, set_seed, train_epoch
 
     print("=" * 60)
@@ -48,7 +49,7 @@ def main(device_name: str = None):
     print(f"  Batch size: {BATCH_SIZE}")
 
     print("\n[2/4] 初始化 BERTweet 模型...")
-    model = BertRumorClassifier(model_name=BERTWEET_MODEL_NAME)
+    model = BertweetRumorClassifier(model_name=BERTWEET_MODEL_NAME)
     model.to(device)
     tokenizer = AutoTokenizer.from_pretrained(BERTWEET_MODEL_NAME, **TOKENIZER_KWARGS)
 

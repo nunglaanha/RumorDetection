@@ -28,6 +28,7 @@ def main():
     args = parser.parse_args()
 
     from Bertweet.config import BERTWEET_MODEL_NAME, EVAL_BATCH_SIZE, MAX_SEQ_LENGTH, RESULTS_DIR
+    from Bertweet.classifier import BertweetRumorClassifier
     from Bertweet.data_processor import get_data_loaders
     from src.tune import run_tuning
 
@@ -42,6 +43,7 @@ def main():
         output_dir=RESULTS_DIR,
         model_name=BERTWEET_MODEL_NAME,
         data_loader_fn=get_data_loaders,
+        model_class=BertweetRumorClassifier,
         max_seq_length=MAX_SEQ_LENGTH,
         eval_batch_size=EVAL_BATCH_SIZE,
         config_target="Bertweet/config.py",

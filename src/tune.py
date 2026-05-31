@@ -136,6 +136,7 @@ def run_tuning(
     output_dir: Path = RESULTS_DIR,
     model_name: str = BERT_MODEL_NAME,
     data_loader_fn: Optional[Callable] = None,
+    model_class: Optional[Callable] = None,
     max_seq_length: int = MAX_SEQ_LENGTH,
     eval_batch_size: int = EVAL_BATCH_SIZE,
     config_target: str = "src/config.py",
@@ -160,6 +161,7 @@ def run_tuning(
     from src.train import evaluate, set_seed, train_epoch
 
     data_loader_fn = data_loader_fn or default_get_data_loaders
+    model_class = model_class or BertRumorClassifier
 
     if metric not in {"f1", "accuracy", "precision", "recall"}:
         raise ValueError("metric 只能是 f1 / accuracy / precision / recall")
@@ -212,7 +214,7 @@ def run_tuning(
                 eval_batch_size=max(eval_batch_size, batch_size),
                 max_len=max_seq_length,
             )
-            model = BertRumorClassifier(model_name=model_name)
+            model = model_class(model_name=model_name)
             model.to(device)
 
             optimizer = AdamW(

@@ -2,6 +2,14 @@
 
 This directory keeps the BERTweet experiment separate from the `src/` BERT baseline.
 
+The experiment uses a BERTweet-specific classifier head:
+
+```text
+BERTweet last_hidden_state[:, 0] -> Dropout -> Linear
+```
+
+This avoids relying on `pooler_output`, which is less natural for RoBERTa-style models.
+
 ## Setup
 
 ```bash
