@@ -13,7 +13,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 MODEL_DIR = PROJECT_ROOT / "models"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
-TRAIN_PATH = DATA_DIR / "train.csv"
+TRAIN_PATH = DATA_DIR / "train_cleaned.csv"
 VAL_PATH = DATA_DIR / "val.csv"
 
 # ================ 直接下载的预训练模型保存路径 =============

@@ -60,7 +60,13 @@ pip install faiss-gpu
 |----|------|-------|-------|
 | 536824260615237632 | Swiss museum confirms... | 1 | 0 |
 
-数据已默认提供在 `data/` 目录中。
+#### 数据清洗
+
+原始训练集存在标签冲突（同一推文被标为不同标签），在训练前通过`data/data_conflict_detect.py`检查。
+
+若发现冲突，人工判断每条冲突的正确标签，通过`data/data_clean.py`生成清洗后的文件`train_cleaned.csv`.
+
+清洗后将 `src/config.py` 中的 `TRAIN_PATH`设置为指向 `train_cleaned.csv`。
 
 ### 4. 配置 LLM API
 
@@ -213,33 +219,39 @@ python -m src.pipeline --stage all
 
 ```
 RumorDetect/
-├── data/                          # 数据集
-│   ├── train.csv                  # 训练集 (2840条)
-│   └── val.csv                    # 验证集 (401条)
+├── data/                              # 数据集
+│   ├── train.csv                      # 原始训练集 (2840条)
+│   ├── train_cleaned.csv              # 清洗后的训练集 (2839条)
+│   ├── val.csv                        # 验证集 (401条)
+│   ├── data_conflict_detect.py        # 标签冲突检测脚本
+│   └── data_clean.py                  # 数据清洗脚本
 │
-├── models/                        # 训练产出的模型文件（运行后生成）
-│   ├── bert_rumor_classifier/     # 微调后的BERT模型
-│   ├── dense_index.faiss          # FAISS稠密检索索引
-│   ├── train_embeddings.npy       # 训练集嵌入向量缓存
-│   └── sentence_transformer/      # 嵌入模型缓存
+├── models/                            # 训练产出的模型文件（运行后生成）
+│   ├── pretrained/                    # HuggingFace 预训练模型缓存
+│   │   ├── hub/                       #   transformers 模型文件
+│   │   └── ...                        #
+│   ├── bert_rumor_classifier/         # 微调后的BERT模型
+│   ├── dense_index.faiss              # FAISS稠密检索索引
+│   └── sentence_transformer/          # 嵌入模型缓存
 │
-├── results/                       # 评估结果（运行后生成）
+├── results/                           # 评估结果（运行后生成）
 │   ├── val_predictions.json
 │   └── val_predictions.csv
 │
-├── src/                           # 核心源码
-│   ├── __init__.py                # 模块声明
-│   ├── config.py                  # 配置文件（路径、超参数、API配置）
-│   ├── data_processor.py          # 数据处理器
-│   ├── bert_classifier.py         # BERT分类器模型
-│   ├── train.py                   # 训练脚本
-│   ├── dense_retriever.py         # 稠密检索器（RAG）
-│   ├── llm_explainer.py           # LLM解释生成器
-│   ├── inference.py               # 推理引擎
-│   └── pipeline.py                # 端到端流水线入口
+├── src/                               # 核心源码
+│   ├── __init__.py                    # 模块声明
+│   ├── config.py                      # 配置文件（路径、超参数、API配置）
+│   ├── data_processor.py              # 数据处理器
+│   ├── bert_classifier.py             # BERT分类器模型
+│   ├── train.py                       # 训练脚本
+│   ├── dense_retriever.py             # 稠密检索器（RAG）
+│   ├── llm_explainer.py               # LLM解释生成器
+│   ├── inference.py                   # 推理引擎
+│   └── pipeline.py                    # 端到端流水线入口
 │
-├── requirements.txt               # Python依赖清单
-└── README.md                      # 本文件
+├── requirements.txt                   # Python依赖清单
+├── .gitignore                         # Git忽略规则
+└── README.md                          # 本文件
 ```
 
 ### 各模块技术细节
