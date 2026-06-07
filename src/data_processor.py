@@ -29,8 +29,6 @@ def clean_text(text: str) -> str:
 
 
 class RumorDataset(Dataset):
-    """谣言检测数据集"""
-
     def __init__(self, texts: List[str], labels: List[int], tokenizer, max_len: int):
         self.texts = texts
         self.labels = labels
@@ -57,15 +55,11 @@ class RumorDataset(Dataset):
             "attention_mask": encoding["attention_mask"].flatten(),
             "token_type_ids": encoding.get("token_type_ids", torch.zeros(self.max_len)).flatten(),
             "label": torch.tensor(label, dtype=torch.long),
-            "text": self.texts[idx],      # 保留原始文本用于解释生成
+            "text": self.texts[idx],
         }
 
 
 def load_csv_data(file_path: Path) -> Tuple[List[str], List[int], List[str], List[str]]:
-    """
-    加载CSV数据
-    返回: (ids, texts, labels, events)
-    """
     ids, texts, labels, events = [], [], [], []
     with open(file_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -85,17 +79,9 @@ def get_data_loaders(
     eval_batch_size: int = EVAL_BATCH_SIZE,
     max_len: int = MAX_SEQ_LENGTH,
 ) -> Tuple[DataLoader, DataLoader, Dict]:
-    """
-    加载数据并创建 DataLoader
-
-    返回:
-        train_loader, val_loader, extra_info
-        extra_info 包含原始文本列表等后续用到的信息
-    """
     tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL_NAME)
 
-    # 加载训练集
-    train_ids, train_texts, train_labels, train_events = load_csv_data(train_path)
+    train_ids, train_texts, train_labels, train_events = load_csv_data(train_path) # 加载训练集
 
     # 划分训练/验证
     split_idx = int(len(train_texts) * val_split)
@@ -112,7 +98,6 @@ def get_data_loaders(
     val_texts_split = [train_texts[i] for i in val_idx]
     val_labels_split = [train_labels[i] for i in val_idx]
 
-    # 额外信息
     extra_info = {
         "all_train_texts": train_texts,
         "all_train_labels": train_labels,
@@ -123,7 +108,6 @@ def get_data_loaders(
         "val_indices": val_idx,
     }
 
-    # 构建 Dataset 和 DataLoader
     train_dataset = RumorDataset(train_texts_split, train_labels_split, tokenizer, max_len)
     val_dataset = RumorDataset(val_texts_split, val_labels_split, tokenizer, max_len)
 

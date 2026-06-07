@@ -18,13 +18,7 @@ from src.config import (
 
 
 class DenseRetriever:
-    """
-    稠密检索器
-
-    使用 sentence-transformers 编码文本为稠密向量，
-    通过 FAISS 进行高效的相似度检索，为 LLM 提供相关参考案例。
-    """
-
+    # 使用 sentence-transformers 编码文本为稠密向量，通过 FAISS 进行高效的相似度检索，为 LLM 提供相关参考案例。
     def __init__(
         self,
         model_name: str = EMBEDDING_MODEL_NAME,
@@ -41,13 +35,12 @@ class DenseRetriever:
         self._load_or_initialize()
 
     def _load_or_initialize(self):
-        """加载或初始化模型和索引"""
         try:
             from sentence_transformers import SentenceTransformer
             self.model = SentenceTransformer(self.model_name)
         except ImportError:
             raise ImportError(
-                "请安装 sentence-transformers: pip install sentence-transformers"
+                "Please install sentence-transformers by 'pip install sentence-transformers'"
             )
 
         if os.path.exists(self.index_path) and os.path.exists(self.embeddings_cache_path):
@@ -55,12 +48,10 @@ class DenseRetriever:
             self._load_corpus_metadata()
 
     def _load_index(self):
-        """加载 FAISS 索引"""
         import faiss
         self.index = faiss.read_index(self.index_path)
 
     def _load_corpus_metadata(self):
-        """加载语料库元数据"""
         metadata_path = self.embeddings_cache_path.replace(".npy", "_metadata.npz")
         if os.path.exists(metadata_path):
             data = np.load(metadata_path, allow_pickle=True)
@@ -68,7 +59,6 @@ class DenseRetriever:
             self.corpus_labels = data["labels"].tolist()
 
     def encode(self, texts: List[str]) -> np.ndarray:
-        """将文本编码为稠密向量"""
         if self.model is None:
             from sentence_transformers import SentenceTransformer
             self.model = SentenceTransformer(self.model_name)
@@ -76,10 +66,9 @@ class DenseRetriever:
         return np.array(embeddings, dtype=np.float32)
 
     def build_index(self, texts: List[str], labels: List[int]):
-        """构建 FAISS 索引"""
         import faiss
 
-        print(f"编码 {len(texts)} 条文本...")
+        print(f"编码第 {len(texts)} 条文本...")
         embeddings = self.encode(texts)
 
         # 构建 FAISS 索引 (L2 距离)
@@ -91,7 +80,6 @@ class DenseRetriever:
         os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
         faiss.write_index(self.index, self.index_path)
 
-        # 保存元数据
         self.corpus_texts = texts
         self.corpus_labels = labels
         metadata_path = self.embeddings_cache_path.replace(".npy", "_metadata.npz")
@@ -101,7 +89,6 @@ class DenseRetriever:
             labels=np.array(labels, dtype=int),
         )
 
-        # 也保存原始嵌入向量（可选，用于加速）
         np.save(self.embeddings_cache_path, embeddings)
 
         print(f"索引构建完成: {self.index.ntotal} 条向量")
@@ -109,12 +96,7 @@ class DenseRetriever:
     def retrieve(
         self, query: str, top_k: int = RETRIEVE_TOP_K
     ) -> List[Tuple[str, int, float]]:
-        """
-        检索与查询最相似的 top_k 条文本
-
-        返回:
-            List of (text, label, distance)
-        """
+        # 检索与查询最相似的 top_k 条文本
         if self.index is None:
             raise RuntimeError("索引未构建，请先调用 build_index()")
 
@@ -135,12 +117,7 @@ class DenseRetriever:
     def retrieve_formatted(
         self, query: str, top_k: int = RETRIEVE_TOP_K
     ) -> str:
-        """
-        检索并格式化为 LLM 友好的字符串
-
-        返回:
-            格式化后的参考案例字符串
-        """
+        # 检索最相似的字符串，格式化之后返回
         results = self.retrieve(query, top_k)
 
         if not results:
@@ -156,7 +133,7 @@ class DenseRetriever:
 
 
 def build_faiss_index(texts: List[str], labels: List[int]):
-    """便捷函数：构建并保存FAISS索引"""
+    # 构建并保存FAISS索引
     retriever = DenseRetriever()
     retriever.build_index(texts, labels)
     return retriever

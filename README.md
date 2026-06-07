@@ -74,6 +74,7 @@ pip install faiss-gpu
 
 ```bash
 # 方式一：环境变量
+# Linux/MacOS
 export LLM_API_URL="https://models.sjtu.edu.cn/api/v1"
 export LLM_API_KEY="your-actual-api-key"
 export LLM_MODEL_NAME="qwen3.5-27b"
@@ -83,7 +84,7 @@ $env:LLM_API_URL="https://models.sjtu.edu.cn/api/v1"
 $env:LLM_API_KEY="your-actual-api-key"
 ```
 
-> **提示**：如果未配置 API，系统会使用内置的模板化解释作为降级方案，不影响分类功能。
+> 如果未配置 API，系统会使用内置的模板化解释作为降级方案，不影响分类功能。
 
 ---
 
@@ -143,7 +144,7 @@ Epoch 4/10
 
 ---
 
-## 评估模型
+## 评测模型
 
 在验证集上运行完整评估（分类 + 解释生成）：
 
@@ -156,7 +157,7 @@ python -m src.pipeline --stage eval
 - `results/val_predictions.json`：包含每条推文的完整预测信息
 - `results/val_predictions.csv`：易读的表格格式
 
-### 评估输出示例
+### 评测输出示例
 
 ```
 ============================================================
@@ -254,7 +255,7 @@ RumorDetect/
 └── README.md                          # 本文件
 ```
 
-### 各模块技术细节
+### 关键代码解释
 
 #### [src/config.py](src/config.py) - 配置文件
 
