@@ -6,6 +6,7 @@ LLM解释生成器 - 调用交大本地API生成自然语言判断依据
 import os
 import sys
 import json
+import time
 import requests
 from typing import Optional, List
 
@@ -60,6 +61,10 @@ class LLMExplainer:
     支持 OpenAI 兼容格式，可通过配置适配不同的 API 网关。
     """
 
+    # 速率限制：API 限制 ≤10 RPM，每请求间隔至少 6.5 秒（留 0.5 秒余量）
+    _last_api_call_time: float = 0.0
+    _min_interval: float = 6.5
+
     def __init__(
         self,
         api_url: str = LLM_API_URL,
@@ -77,7 +82,6 @@ class LLMExplainer:
         self.top_p = top_p
 
     def _check_config(self):
-        """检查 API 配置是否有效"""
         if self.api_key == "your-api-key-here" or not self.api_key:
             return False
         if not self.api_url:
@@ -126,7 +130,17 @@ class LLMExplainer:
         调用交大本地API
 
         使用 OpenAI 兼容格式。
+        内部包含速率限制，确保不超过 10 RPM。
         """
+
+        # ---- 速率限制 ----
+        elapsed = time.time() - LLMExplainer._last_api_call_time
+        if elapsed < LLMExplainer._min_interval:
+            wait = LLMExplainer._min_interval - elapsed
+            print(f"  速率限制: 等待 {wait:.1f} 秒后发送下一请求...")
+            time.sleep(wait)
+        LLMExplainer._last_api_call_time = time.time()
+        # ------------------
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",

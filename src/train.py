@@ -16,8 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import (
     BERT_MODEL_NAME, BERT_MODEL_PATH, BERT_TOKENIZER_PATH,
-    FAISS_INDEX_PATH, EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
-    WARMUP_RATIO, EARLY_STOPPING_PATIENCE, RANDOM_SEED, MAX_SEQ_LENGTH
+    FAISS_INDEX_PATH, RESULTS_DIR, EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
+    WARMUP_RATIO, EARLY_STOPPING_PATIENCE, RANDOM_SEED, MAX_SEQ_LENGTH,
+    get_device, describe_torch_devices
 )
 from src.data_processor import get_data_loaders, load_csv_data
 from src.bert_classifier import BertRumorClassifier, save_model
@@ -103,7 +104,7 @@ def evaluate(
     return metrics
 
 
-def main():
+def main(device_name: str = None):
     """主训练流程"""
     print("=" * 60)
     print("RumorDetect - BERT谣言检测模型训练")
@@ -111,8 +112,18 @@ def main():
 
     # 设置
     set_seed()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    try:
+        device = torch.device(get_device(device_name))
+    except RuntimeError as exc:
+        print("\n设备检测失败:")
+        print(str(exc))
+        print("\nPyTorch 设备状态:")
+        print(describe_torch_devices())
+        raise
+
     print(f"使用设备: {device}")
+    if device.type == "cuda":
+        print(f"CUDA 设备: {torch.cuda.get_device_name(device)}")
 
     # 1. 加载数据
     print("\n[1/5] 加载数据...")
@@ -140,6 +151,7 @@ def main():
     best_val_f1 = 0
     patience_counter = 0
     best_model_state = None
+    history = {"epoch": [], "train_loss": [], "val_loss": [], "val_accuracy": [], "val_f1": []}
 
     for epoch in range(1, EPOCHS + 1):
         print(f"\n{'='*40}")
@@ -152,6 +164,13 @@ def main():
         print(f"  验证 Loss: {val_metrics['loss']:.4f}")
         print(f"  验证 Accuracy: {val_metrics['accuracy']:.4f}")
         print(f"  验证 F1: {val_metrics['f1']:.4f}")
+
+        # 记录 loss 和指标
+        history["epoch"].append(epoch)
+        history["train_loss"].append(round(train_loss, 6))
+        history["val_loss"].append(round(val_metrics["loss"], 6))
+        history["val_accuracy"].append(round(val_metrics["accuracy"], 6))
+        history["val_f1"].append(round(val_metrics["f1"], 6))
 
         # 早停和模型保存
         if val_metrics["f1"] > best_val_f1:
@@ -176,6 +195,48 @@ def main():
     os.makedirs(BERT_MODEL_PATH, exist_ok=True)
     save_model(model, tokenizer, str(BERT_MODEL_PATH))
     print(f"  模型已保存至: {BERT_MODEL_PATH}")
+
+    # 保存训练历史（loss 曲线数据）
+    import json
+    history_path = RESULTS_DIR / "training_history.json"
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(history_path, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+    print(f"  训练历史已保存至: {history_path}")
+
+    # 绘制 loss 曲线
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        fig, ax1 = plt.subplots(figsize=(10, 5))
+
+        ax1.set_xlabel("Epoch")
+        ax1.set_ylabel("Loss", color="tab:blue")
+        ax1.plot(history["epoch"], history["train_loss"], marker="o", color="tab:blue",
+                 label="Train Loss")
+        ax1.plot(history["epoch"], history["val_loss"], marker="s", color="tab:orange",
+                 label="Val Loss")
+        ax1.tick_params(axis="y", labelcolor="tab:blue")
+        ax1.legend(loc="upper left")
+        ax1.grid(True, alpha=0.3)
+
+        ax2 = ax1.twinx()
+        ax2.set_ylabel("F1", color="tab:green")
+        ax2.plot(history["epoch"], history["val_f1"], marker="^", color="tab:green",
+                 label="Val F1", linestyle="--")
+        ax2.tick_params(axis="y", labelcolor="tab:green")
+        ax2.legend(loc="upper right")
+
+        plt.title("Training Loss & Validation F1 Curve")
+        plt.tight_layout()
+        curve_path = RESULTS_DIR / "loss_curve.png"
+        plt.savefig(curve_path, dpi=150)
+        plt.close()
+        print(f"  Loss 曲线已保存至: {curve_path}")
+    except ImportError:
+        print("  matplotlib 未安装，跳过 loss 曲线绘制")
 
     # 构建FAISS索引（RAG检索用）
     print("\n构建稠密检索索引...")

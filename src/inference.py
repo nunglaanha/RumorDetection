@@ -12,7 +12,8 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import (
-    BERT_MODEL_PATH, VAL_PATH, RESULTS_DIR, RETRIEVE_TOP_K, MAX_SEQ_LENGTH
+    BERT_MODEL_PATH, VAL_PATH, RESULTS_DIR, RETRIEVE_TOP_K, MAX_SEQ_LENGTH,
+    get_device, describe_torch_devices
 )
 from src.bert_classifier import load_model
 from src.data_processor import load_csv_data, get_tokenizer, clean_text
@@ -32,10 +33,14 @@ class InferenceEngine:
         model_path: str = str(BERT_MODEL_PATH),
         device: str = None,
     ):
-        if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device(device)
+        try:
+            self.device = torch.device(get_device(device))
+        except RuntimeError as exc:
+            print("\n设备检测失败:")
+            print(str(exc))
+            print("\nPyTorch 设备状态:")
+            print(describe_torch_devices())
+            raise
 
         print(f"加载模型 (设备: {self.device})...")
         self.model, self.tokenizer = load_model(model_path)
@@ -134,7 +139,7 @@ class InferenceEngine:
         return results
 
 
-def evaluate_on_val():
+def evaluate_on_val(device: str = None):
     """在验证集上运行完整评估"""
     print("=" * 60)
     print("RumorDetect - 验证集评估")
@@ -145,7 +150,7 @@ def evaluate_on_val():
     print(f"验证集大小: {len(texts)} 条")
 
     # 初始化推理引擎
-    engine = InferenceEngine()
+    engine = InferenceEngine(device=device)
 
     # 批量推理
     results = engine.predict_batch(texts)
@@ -195,9 +200,9 @@ def evaluate_on_val():
     return results, accuracy
 
 
-def single_prediction(text: str):
+def single_prediction(text: str, device: str = None):
     """单条推文预测（供交互式使用）"""
-    engine = InferenceEngine()
+    engine = InferenceEngine(device=device)
     result = engine.predict_single(text)
 
     print("\n" + "=" * 60)
@@ -221,13 +226,15 @@ if __name__ == "__main__":
                         help="运行模式: eval(评估验证集) / single(单条预测)")
     parser.add_argument("--text", type=str, default=None,
                         help="单条预测时的推文文本")
+    parser.add_argument("--device", type=str, default=None,
+                        help="运行设备: auto / cpu / cuda / cuda:0 / mps")
 
     args = parser.parse_args()
 
     if args.mode == "eval":
-        evaluate_on_val()
+        evaluate_on_val(device=args.device)
     elif args.mode == "single":
         if not args.text:
             print("请使用 --text 参数提供推文文本")
         else:
-            single_prediction(args.text)
+            single_prediction(args.text, device=args.device)

@@ -75,12 +75,12 @@ pip install faiss-gpu
 ```bash
 # 方式一：环境变量
 # Linux/MacOS
-export LLM_API_URL="https://models.sjtu.edu.cn/api/v1"
+export LLM_API_URL="https://models.sjtu.edu.cn/api/v1/chat/completions"
 export LLM_API_KEY="your-actual-api-key"
 export LLM_MODEL_NAME="qwen3.5-27b"
 
 # Windows PowerShell
-$env:LLM_API_URL="https://models.sjtu.edu.cn/api/v1"
+$env:LLM_API_URL="https://models.sjtu.edu.cn/api/v1/chat/completions"
 $env:LLM_API_KEY="your-actual-api-key"
 ```
 
@@ -91,7 +91,7 @@ $env:LLM_API_KEY="your-actual-api-key"
 ## 训练模型
 
 ```bash
-# 从项目根目录运行
+# 从项目根目录"RumorDetect/"运行
 python -m src.pipeline --stage train
 ```
 
@@ -99,7 +99,7 @@ python -m src.pipeline --stage train
 
 1. **加载数据**：从 `data/train.csv` 读取 2840 条推文
 2. **划分数据集**：80% 训练 / 20% 验证
-3. **微调 BERT**：使用交叉熵损失，AdamW 优化器，学习率 2e-5
+3. **微调 BERT**：使用交叉熵损失，AdamW 优化器
 4. **早停机制**：验证集 F1 连续 3 轮不提升即停止
 5. **保存模型**：将最佳模型保存至 `models/bert_rumor_classifier/`
 6. **构建检索索引**：对全部训练集构建 FAISS 稠密索引，保存至 `models/dense_index.faiss`
@@ -309,6 +309,7 @@ RumorDetect/
   - 支持任意兼容 OpenAI 格式的 API（适用于交大 claw 平台）
   - 失败降级策略：API 不可用时自动返回模板化解释
   - 批量处理支持（带进度条）
+  - API 请求频率限制：通过类级别的时间戳记录和最小间隔控制（`_min_interval = 6.5s`），确保请求速率 ≤ 10 RPM，避免因频繁调用被 API 网关限流
 - **提示词设计**：
   - 系统提示词定义分析维度（语言风格、信息来源、事实核查等）
   - 用户提示词包含推文原文、预测标签、置信度、关键证据、参考案例

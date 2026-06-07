@@ -12,7 +12,8 @@ from typing import List, Tuple, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import (
-    EMBEDDING_MODEL_NAME, FAISS_INDEX_PATH, EMBEDDINGS_CACHE_PATH,
+    EMBEDDING_MODEL_NAME, EMBEDDING_MODEL_PATH,
+    FAISS_INDEX_PATH, EMBEDDINGS_CACHE_PATH,
     RETRIEVE_TOP_K, MODEL_DIR
 )
 
@@ -35,13 +36,22 @@ class DenseRetriever:
         self._load_or_initialize()
 
     def _load_or_initialize(self):
-        try:
-            from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer(self.model_name)
-        except ImportError:
-            raise ImportError(
-                "Please install sentence-transformers by 'pip install sentence-transformers'"
-            )
+        from sentence_transformers import SentenceTransformer
+
+        # 优先从本地路径加载
+        local_path = str(EMBEDDING_MODEL_PATH)
+        if os.path.isdir(local_path) and os.listdir(local_path):
+            print(f"从本地加载嵌入模型: {local_path}")
+            self.model = SentenceTransformer(local_path)
+        else:
+            # 尝试从 HuggingFace 加载（失败时回退到国内镜像）
+            try:
+                self.model = SentenceTransformer(self.model_name)
+            except Exception:
+                import httpx
+                os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+                print(f"直连 HuggingFace 失败，尝试镜像站下载 {self.model_name} ...")
+                self.model = SentenceTransformer(self.model_name)
 
         if os.path.exists(self.index_path) and os.path.exists(self.embeddings_cache_path):
             self._load_index()
@@ -60,8 +70,7 @@ class DenseRetriever:
 
     def encode(self, texts: List[str]) -> np.ndarray:
         if self.model is None:
-            from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer(self.model_name)
+            self._load_or_initialize()
         embeddings = self.model.encode(texts, show_progress_bar=False)
         return np.array(embeddings, dtype=np.float32)
 
