@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.optim import AdamW
-from transformers import get_linear_schedule_with_warmup, AutoTokenizer
+from transformers import get_cosine_schedule_with_warmup, AutoTokenizer
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from tqdm import tqdm
 
@@ -44,7 +44,7 @@ def train_epoch(
     """训练一个epoch，返回平均loss"""
     model.train()
     total_loss = 0
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     progress_bar = tqdm(dataloader, desc="Training", leave=False)
     for batch in progress_bar:
@@ -142,7 +142,7 @@ def main(device_name: str = None):
     optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     total_steps = len(train_loader) * EPOCHS
     warmup_steps = int(total_steps * WARMUP_RATIO)
-    scheduler = get_linear_schedule_with_warmup(
+    scheduler = get_cosine_schedule_with_warmup(
         optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps
     )
 

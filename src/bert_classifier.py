@@ -22,22 +22,8 @@ class BertRumorClassifier(nn.Module):
         super().__init__()
         self.config = AutoConfig.from_pretrained(model_name, output_attentions=True)
         self.bert = AutoModel.from_pretrained(model_name, config=self.config)
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.5)
         self.classifier = nn.Linear(self.config.hidden_size, num_labels)
-        self._attention_weights = None
-        self._register_hooks()
-
-    def _register_hooks(self):
-        """捕获最后一层的注意力权重
-           用于可解释性分析"""
-        def hook_fn(module, input, output):
-            # output 是 (last_hidden_state, pooler_output, attentions)
-            if len(output) > 2 and output[-1] is not None:
-                # output[-1] 是注意力元组，取最后一层
-                self._attention_weights = output[-1][-1].detach()
-
-        # 注册到 BERT 编码器
-        self.bert.encoder.register_forward_hook(hook_fn)
 
     def forward(
         self,
@@ -63,14 +49,17 @@ class BertRumorClassifier(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
+            output_attentions=True,
         )
 
         pooled = outputs.pooler_output
         pooled = self.dropout(pooled)
         logits = self.classifier(pooled)
 
-        if return_attentions and self._attention_weights is not None:
-            return logits, self._attention_weights
+        if return_attentions and outputs.attentions is not None:
+            # outputs.attentions 是 (layers, batch, heads, seq, seq) 的元组
+            # 取最后一层的注意力权重
+            return logits, outputs.attentions[-1]
         return logits, None
 
     def predict(

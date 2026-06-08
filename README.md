@@ -7,7 +7,7 @@
 | 组件 | 技术选型 | 功能 |
 |------|---------|------|
 | **阶段一** | BERT (`bert-base-uncased`) | 推文二分类（谣言/非谣言），提取注意力权重 |
-| **阶段二** | sentence-transformers + FAISS | 稠密语义检索，召回训练集中相似案例 |
+| **阶段二** | RAG检索：sentence-transformers + FAISS | 稠密语义检索，召回训练集中相似案例 |
 | **阶段三** | 交大本地 LLM API | 基于预测结果+检索案例，生成自然语言判断依据 |
 
 ### 输入/输出
@@ -91,18 +91,17 @@ $env:LLM_API_KEY="your-actual-api-key"
 ## 训练模型
 
 ```bash
-# 从项目根目录"RumorDetect/"运行
+cd RumorDetect
 python -m src.pipeline --stage train
 ```
 
 训练过程将：
 
 1. **加载数据**：从 `data/train.csv` 读取 2840 条推文
-2. **划分数据集**：80% 训练 / 20% 验证
-3. **微调 BERT**：使用交叉熵损失，AdamW 优化器
-4. **早停机制**：验证集 F1 连续 3 轮不提升即停止
-5. **保存模型**：将最佳模型保存至 `models/bert_rumor_classifier/`
-6. **构建检索索引**：对全部训练集构建 FAISS 稠密索引，保存至 `models/dense_index.faiss`
+2. **划分数据集**：80% 训练集 / 20% 验证集
+3. **微调 BERT**：使用交叉熵损失，AdamW 优化器，对BERT模型进行微调；若验证集 F1 连续 3 轮不提升即停止
+4. **保存模型**：将最佳模型保存至 `models/bert_rumor_classifier/`
+5. **构建检索索引**：对全部训练集构建 FAISS 稠密索引，保存至 `models/dense_index.faiss`，用于后续RAG检索
 
 ### 训练输出
 
@@ -259,14 +258,12 @@ RumorDetect/
 
 #### [src/config.py](src/config.py) - 配置文件
 
-- **技术**：环境变量 + 硬编码默认值
 - **功能**：集中管理所有路径、超参数、API 配置
 - **关键配置项**：BERT 模型名、训练超参数、FAISS 索引路径、LLM API 地址和金钥
 - **注意**：API 密钥可通过环境变量 `LLM_API_KEY` 设置，避免硬编码泄露
 
 #### [src/data_processor.py](src/data_processor.py) - 数据处理
 
-- **技术**：PyTorch `Dataset` + HuggingFace `Tokenizer`
 - **功能**：
   - 加载 CSV 数据，清洗文本（去除 URL、@用户名，保留#话题标签）
   - 构建 PyTorch DataLoader，支持批处理
@@ -274,7 +271,6 @@ RumorDetect/
 
 #### [src/bert_classifier.py](src/bert_classifier.py) - BERT 分类器
 
-- **技术**：HuggingFace `AutoModel` + PyTorch `nn.Module`
 - **功能**：
   - `BertRumorClassifier`：BERT → Dropout → Linear 分类头
   - 通过 PyTorch forward hook 捕获最后一层注意力权重
@@ -326,44 +322,6 @@ RumorDetect/
 #### [src/pipeline.py](src/pipeline.py) - 流水线入口
 
 - **功能**：统一命令行入口，支持 `train` / `eval` / `predict` / `all` 四种模式
-
----
-
-## 架构图
-
-```
-输入文本
-    │
-    ▼
-┌────────────────────────────────────┐
-│ 阶段一：BERT分类器                    │
-│  ├─ bert-base-uncased 编码          │
-│  ├─ 线性分类头 → 预测标签(0/1)       │
-│  └─ 注意力提取 → 关键证据词          │
-└───────────┬────────────────────────┘
-            │ 预测标签 + 置信度 + 关键证据
-            ▼
-┌────────────────────────────────────┐
-│ 阶段二：稠密检索 (RAG)               │
-│  ├─ sentence-transformers 编码      │
-│  ├─ FAISS 索引检索 top-k 相似案例    │
-│  └─ 格式化检索结果                   │
-└───────────┬────────────────────────┘
-            │ 相似案例文本 + 真实标签
-            ▼
-┌────────────────────────────────────┐
-│ 阶段三：LLM 解释生成                  │
-│  ├─ 构造 System + User Prompt      │
-│  ├─ 调用交大本地 API                │
-│  └─ 输出中文判断依据                 │
-└───────────┬────────────────────────┘
-            │
-            ▼
-    ┌───────────────┐
-    │ 输出:           │
-    │ 标签 + 解释文本  │
-    └───────────────┘
-```
 
 ---
 
