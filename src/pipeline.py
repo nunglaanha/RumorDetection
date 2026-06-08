@@ -92,18 +92,6 @@ def run_pipeline(args):
             threshold_step=args.threshold_step,
         )
 
-    elif args.stage == "tune":
-        from src.tune import run_tuning
-        run_tuning(
-            device_name=device,
-            n_trials=args.trials,
-            max_epochs=args.tune_epochs,
-            metric=args.tune_metric,
-            timeout=args.tune_timeout,
-            study_name=args.study_name,
-            storage=args.storage,
-        )
-
     else:
         print(f"未知阶段: {args.stage}")
         sys.exit(1)
