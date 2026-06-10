@@ -247,7 +247,9 @@ RumorDetect/
 │   ├── dense_retriever.py             # 稠密检索器（RAG）
 │   ├── llm_explainer.py               # LLM解释生成器
 │   ├── inference.py                   # 推理引擎
-│   └── pipeline.py                    # 端到端流水线入口
+│   ├── pipeline.py                    # 端到端流水线入口
+│   ├── threshold_tune.py              # 阈值调优脚本
+│   └── tune.py                        # Optuna超参数搜索脚本
 │
 ├── requirements.txt                   # Python依赖清单
 ├── .gitignore                         # Git忽略规则
@@ -322,6 +324,33 @@ RumorDetect/
 #### [src/pipeline.py](src/pipeline.py) - 流水线入口
 
 - **功能**：统一命令行入口，支持 `train` / `eval` / `predict` / `all` 四种模式
+
+#### [src/threshold_tune.py](src/threshold_tune.py) - 阈值调优脚本
+
+- **功能**：在验证集上搜索使 F1 最大的谣言概率阈值，解决默认 0.5 阈值不一定是二分类最优的问题
+- **技术流程**：
+  - 加载已训练的 BERT 分类器，对验证集逐条计算 P(谣言) 概率
+  - 在 [0.05, 0.95] 区间内以 0.01 步长遍历，计算每个阈值下的 Accuracy、F1、Precision、Recall
+  - 以 F1 为首要指标选出最佳阈值，输出与默认阈值 0.5 的对比
+- **输出**：
+  - `threshold_tuning.json`：最佳阈值与默认阈值摘要
+  - `threshold_curve.csv`：完整阈值-指标曲线
+  - `val_probabilities.csv`：每条样本的概率及两种阈值下的预测结果
+- **命令行**：`python -m src.threshold_tune --device cuda`
+
+#### [src/tune.py](src/tune.py) - Optuna 超参数搜索脚本
+
+- **技术**：Optuna + TPE 采样器 + Median 剪枝器
+- **功能**：
+  - 自动搜索 BERT 微调的最佳超参数（batch size、learning rate、weight decay、warmup ratio）
+  - 每个 trial 训练少量 epoch，以验证集指定指标（默认 F1）评估参数好坏
+  - OOM（显存不足）自动剪枝，避免因 batch size 过大中断搜索
+  - 支持断点续调（通过 `--storage sqlite:///results/optuna.db`）
+- **搜索空间**：batch size ∈ {16, 32, 64, 128}，lr ∈ [1e-5, 5e-5]，weight_decay ∈ [0, 0.05]，warmup_ratio ∈ [0, 0.2]
+- **输出**：
+  - `optuna_best_params.json`：最佳参数组合
+  - `optuna_trials.csv`：全部 trial 的详细记录
+- **命令行**：`python -m src.tune --device cuda --trials 20 --tune-epochs 3`
 
 ---
 
