@@ -46,10 +46,10 @@ cd RumorDetect
 pip install -r requirements.txt
 ```
 
-如果希望使用 GPU 加速 FAISS，请替换为：
+如果希望使用 GPU 加速 FAISS，请将FAISS替换为GPU版。注意安装时需要适配CUDA版本，这里以CUDA12版本为例：
 
 ```bash
-pip install faiss-gpu
+pip install faiss-gpu-cu12
 ```
 
 ### 3. 配置数据
