@@ -28,14 +28,14 @@ EMBEDDINGS_CACHE_PATH = MODEL_DIR / "train_embeddings.npy"
 EMBEDDING_MODEL_PATH = MODEL_DIR / "sentence_transformer"
 
 # ==================== BERT 训练参数 ====================
-BERT_MODEL_NAME = "bert-base-uncased"       # 预训练模型名称
+BERT_MODEL_NAME = "bert-large-uncased"       # 预训练模型名称
 MAX_SEQ_LENGTH = 128                         # 最大序列长度
-BATCH_SIZE = 16                              # 训练批次大小
-EVAL_BATCH_SIZE = 32                         # 评估批次大小
+BATCH_SIZE = 32                              # 训练批次大小
+EVAL_BATCH_SIZE = 32
 EPOCHS = 10                                  # 最大训练轮数
-LEARNING_RATE = 4.763628595029452e-05        # 学习率
-WEIGHT_DECAY = 0.1                           # 权重衰减
-WARMUP_RATIO = 0.042468                      # 预热比例
+LEARNING_RATE = 4.221409440229581e-05        # 学习率
+WEIGHT_DECAY = 0.05978999788110852           # 权重衰减
+WARMUP_RATIO = 0.18437484700462337           # 预热比例
 EARLY_STOPPING_PATIENCE = 3                  # 早停耐心值
 TRAIN_VAL_SPLIT = 0.8                        # 训练集划分比例
 NUM_LABELS = 2                               # 分类类别数

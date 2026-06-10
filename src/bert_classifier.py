@@ -22,7 +22,7 @@ class BertRumorClassifier(nn.Module):
         super().__init__()
         self.config = AutoConfig.from_pretrained(model_name, output_attentions=True)
         self.bert = AutoModel.from_pretrained(model_name, config=self.config)
-        self.dropout = nn.Dropout(0.9)
+        self.dropout = nn.Dropout(0.1)
         self.classifier = nn.Linear(self.config.hidden_size, num_labels)
 
     def forward(
