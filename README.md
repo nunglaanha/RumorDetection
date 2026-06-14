@@ -68,24 +68,100 @@ pip install faiss-gpu-cu12
 
 清洗后将 `src/config.py` 中的 `TRAIN_PATH`设置为指向 `train_cleaned.csv`。
 
-### 4. 配置 LLM API
+### 4. 配置交大API
 
-编辑 [src/config.py](src/config.py) 中的 LLM 配置，或者设置环境变量：
+#### 环境变量方式（推荐）
 
 ```bash
-# 方式一：环境变量
-# Linux/MacOS
-export LLM_API_URL="https://models.sjtu.edu.cn/api/v1/chat/completions"
-export LLM_API_KEY="your-actual-api-key"
+# Linux / macOS
+export LLM_API_URL="https://models.sjtu.edu.cn/api/v1"
+export LLM_API_KEY="your-key-here"
 export LLM_MODEL_NAME="qwen3.5-27b"
+
+# Windows CMD
+set LLM_API_URL=https://models.sjtu.edu.cn/api/v1
+set LLM_API_KEY=your-key-here
+set LLM_MODEL_NAME=qwen3.5-27b
 
 # Windows PowerShell
 $env:LLM_API_URL="https://models.sjtu.edu.cn/api/v1/chat/completions"
 $env:LLM_API_KEY="your-actual-api-key"
+$env:LLM_MODEL_NAME=qwen3.5-27b
 ```
 
+### 配置文件方式
+
+直接编辑 [src/config.py](src/config.py) 中的以下变量：
+
+```python
+LLM_API_URL = "https://claw.sjtu.edu.cn/api/v1/chat/completions"
+LLM_API_KEY = "your-actual-api-key"
+LLM_MODEL_NAME = "qwen3.5-27b"
+```
 > 如果未配置 API，系统会使用内置的模板化解释作为降级方案，不影响分类功能。
 
+
+---
+
+## 5. 手动下载预训练模型（可选）
+
+训练和推理需要加载两个预训练模型。代码会在首次运行时自动从 HuggingFace Hub 下载，并缓存到 `models/pretrained/` 目录。如果服务器无法访问 HuggingFace，请按以下步骤手动下载。
+
+### 需要下载的模型
+
+| 模型 | 用途 | 大小 | 本地缓存路径 |
+|------|------|-------|-------------|
+| `bert-base-uncased`和 'bert-large' | BERT 谣言分类器 | 约440 MB | `models/pretrained/` （由 `HF_HOME` 环境变量指定，见 [config.py](src/config.py#L21)） |
+| `all-MiniLM-L6-v2` | RAG 语义嵌入 | 约80 MB | `models/sentence_transformer/` |
+
+### 在**有外网**的机器上执行以下脚本
+
+```python
+# download_models.py
+"""在有外网的环境运行此脚本，然后将 models/ 目录打包上传到服务器。"""
+from pathlib import Path
+import os
+
+project_root = Path(__file__).resolve().parent
+
+# ---------- 1. 下载 BERT ----------
+os.environ["HF_HOME"] = str(project_root / "models" / "pretrained")
+from transformers import AutoModel, AutoTokenizer
+
+AutoModel.from_pretrained("bert-base-uncased")
+AutoTokenizer.from_pretrained("bert-base-uncased")
+print("[OK] bert-base-uncased 已下载到 models/pretrained/")
+
+# ---------- 2. 下载 Sentence Transformer ----------
+from sentence_transformers import SentenceTransformer
+
+model = SentenceTransformer(
+    "all-MiniLM-L6-v2",
+    cache_folder=str(project_root / "models" / "sentence_transformer")
+)
+print("[OK] all-MiniLM-L6-v2 已下载到 models/sentence_transformer/")
+```
+
+### 在服务器上放置
+
+将下载好的 `models/` 目录整体上传到项目根目录即可，目录结构应与下列一致：
+
+```
+RumorDetect/
+└── models/
+    ├── pretrained/                      # BERT 缓存（HF_HOME 指向这里）
+    │   └── hub/
+    │       ├── models--bert-base-uncased/
+    │       │   ├── blobs/              # 模型权重文件
+    │       │   └── refs/               # 版本引用
+    │       └── ...
+    └── sentence_transformer/            # all-MiniLM-L6-v2 缓存
+        └── models--sentence-transformers--all-MiniLM-L6-v2/
+            ├── blobs/
+            └── snapshots/
+```
+
+> **注意**：如果手动放置了模型缓存，训练时 `transformers` 和 `sentence-transformers` 检测到本地缓存已存在，就不会再尝试联网下载。
 ---
 
 ## 训练模型
@@ -104,7 +180,7 @@ python -m src.pipeline --stage train
 5. **构建检索索引**：对全部训练集构建 FAISS 稠密索引，保存至 `models/dense_index.faiss`，用于后续RAG检索
 
 ### 训练输出
-
+示例输出如下：
 ```
 ============================================================
 RumorDetect - BERT谣言检测模型训练
@@ -207,7 +283,7 @@ python -m src.pipeline --stage predict --text "BREAKING: Government officials ha
 
 ## 运行全部流程
 
-一键运行训练 + 评估 + 示例预测：
+按顺序自动运行训练 + 评估 + 示例预测：
 
 ```bash
 python -m src.pipeline --stage all
@@ -227,8 +303,8 @@ RumorDetect/
 │   └── data_clean.py                  # 数据清洗脚本
 │
 ├── models/                            # 训练产出的模型文件（运行后生成）
-│   ├── pretrained/                    # HuggingFace 预训练模型缓存
-│   │   ├── hub/                       #   transformers 模型文件
+│   ├── pretrained/                    # HuggingFace 预训练模型缓存路径
+│   │   ├── hub/                       # 预训练模型文件
 │   │   └── ...                        #
 │   ├── bert_rumor_classifier/         # 微调后的BERT模型
 │   ├── dense_index.faiss              # FAISS稠密检索索引
@@ -256,7 +332,7 @@ RumorDetect/
 └── README.md                          # 本文件
 ```
 
-### 关键代码解释
+### 核心代码
 
 #### [src/config.py](src/config.py) - 配置文件
 
@@ -278,7 +354,7 @@ RumorDetect/
   - 通过 PyTorch forward hook 捕获最后一层注意力权重
   - `get_important_tokens()`：从注意力权重提取模型重点关注的关键词
   - 支持模型保存和加载（BERT 权重 + 分类头分离）
-- **注意力提取机制**：对 [CLS] token 的注意力分数在各注意力头上取平均，排除特殊 token 后取 top-k
+- **注意力提取机制**：作为模型可解释性的一部分，对 [CLS] token 的注意力分数在各注意力头上取平均，排除特殊 token 后取 top-k
 
 #### [src/train.py](src/train.py) - 训练脚本
 
@@ -354,50 +430,5 @@ RumorDetect/
 
 ---
 
-## API 配置指南
-
-### 环境变量方式（推荐）
-
-```bash
-# Linux / macOS
-export LLM_API_URL="https://models.sjtu.edu.cn/api/v1"
-export LLM_API_KEY="your-key-here"
-export LLM_MODEL_NAME="qwen3.5-27b"
-
-# Windows
-set LLM_API_URL=https://models.sjtu.edu.cn/api/v1
-set LLM_API_KEY=your-key-here
-set LLM_MODEL_NAME=qwen3.5-27b
-```
-
-### 配置文件方式
-
-直接编辑 [src/config.py](src/config.py) 中的以下变量：
-
-```python
-LLM_API_URL = "https://claw.sjtu.edu.cn/api/v1/chat/completions"
-LLM_API_KEY = "your-actual-api-key"
-LLM_MODEL_NAME = "qwen3.5-27b"
-```
 
 ---
-
-## 项目集成
-
-本系统的模块化设计使得各组件可以独立使用：
-
-```python
-# 仅使用 BERT 分类
-from src.bert_classifier import BertRumorClassifier, load_model
-model, tokenizer = load_model("models/bert_rumor_classifier")
-
-# 仅使用 RAG 检索
-from src.dense_retriever import DenseRetriever
-retriever = DenseRetriever()
-results = retriever.retrieve("your query text")
-
-# 仅使用 LLM 解释生成
-from src.llm_explainer import LLMExplainer
-explainer = LLMExplainer()
-explanation = explainer.generate(text, prediction=1, confidence=0.85, ...)
-```
