@@ -12,7 +12,7 @@
 袁昌昊
 龙凯峰-524031910174
 
-**完成时间：** ___________
+**完成时间：** 2026-06-17
 
 
 
@@ -38,16 +38,28 @@
 
 ## 3. 核心代码分析（500字）
 
+项目代码位于 `src/` 目录，按功能模块化组织，各模块职责清晰：
+
 | 模块 | 代码文件 | 核心功能 |
 |------|---------|---------|
- 数据处理 | `src/data_processor.py` | 文本清洗（去URL/@）、分词、构建DataLoader |
-| BERT分类 | `src/bert_classifier.py` | BERT→Dropout→Linear分类头，注意力提取 |
-| 训练 | `src/train.py` | AdamW优化、余弦预热、早停机制 |
-| 稠密检索 | `src/dense_retriever.py` | SentenceTransformer编码、FAISS索引、top-5检索 |
-| 解释生成 | `src/llm_explainer.py` | 构造Prompt、调用LLM API、失败降级方案 |
-| 推理引擎 | `src/inference.py` | 三阶段串联、批量推理、结果保存 |
-| 流水线 | `src/pipeline.py` | CLI入口（train/eval/predict） |
-| 配置 | `src/config.py` | 统一管理路径、超参数、API配置 |
+| 数据处理 | `data_processor.py` | 文本清洗（去URL/@）、分词、构建DataLoader |
+| BERT分类 | `bert_classifier.py` | BERT→Dropout→Linear分类头，注意力提取 |
+| 训练 | `train.py` | AdamW优化、余弦预热、早停机制 |
+| 稠密检索 | `dense_retriever.py` | SentenceTransformer编码、FAISS索引、top-5检索 |
+| 解释生成 | `llm_explainer.py` | 构造Prompt、调用LLM API、失败降级方案 |
+| 推理引擎 | `inference.py` | 三阶段串联、批量推理、结果保存 |
+| 流水线 | `pipeline.py` | CLI入口（train/eval/predict） |
+| 配置 | `config.py` | 统一管理路径、超参数、API配置 |
+
+核心模块关键设计如下：
+
+- **BERT分类器**（`bert_classifier.py`）：实现 `BertRumorClassifier` 类，结构为 BERT编码器 → Dropout(0.1) → Linear(hidden_size, 2) 分类头。前向传播时设置 `output_attentions=True` 获取最后一层注意力权重，`get_important_tokens()` 方法对 [CLS] token 在各注意力头上取平均，排除 [PAD]、[CLS]、[SEP] 等特殊 token 后返回 top-10 高分词作为关键证据，使分类决策过程可追溯。模型保存时将 BERT 权重与分类头分离存储，便于加载与再训练。
+
+- **稠密检索**（`dense_retriever.py`）：基于 `all-MiniLM-L6-v2` 将训练集文本预编码为384维稠密向量并缓存在本地；查询时对输入文本实时编码后，通过 FAISS IndexFlatL2 以 L2 距离衡量语义相似度，返回 top-5 最相似案例及其真实标签，为 LLM 解释提供事实参照。
+
+- **解释生成**（`llm_explainer.py`）：遵循 OpenAI 兼容 API 协议，系统提示词从语言风格、信息来源、事实核查、上下文分析和逻辑推理五个维度定义分析框架；用户提示词拼接推文原文、预测标签、置信度、关键证据词和检索案例，引导 LLM 生成连贯的中文判断依据。通过类级别时间戳实现最小 6.5s 请求间隔，API 不可用时自动降级为模板化解释。
+
+- **推理引擎**（`inference.py`）：`InferenceEngine` 类将 BERT 预测、RAG 检索、LLM 解释三阶段串联，`predict_single()` 方法完成端到端推理并返回结构化结果，支持批量推理和验证集评估。
 
 
 
