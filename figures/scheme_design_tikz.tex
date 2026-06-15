@@ -1,0 +1,114 @@
+\begin{tikzpicture}[
+  font=\small,
+  >=Latex,
+  node distance=12mm and 14mm,
+  box/.style={
+    rectangle,
+    rounded corners=2mm,
+    draw=#1!75!black,
+    fill=#1!8,
+    very thick,
+    align=center,
+    minimum height=13mm,
+    text width=31mm
+  },
+  data/.style={
+    trapezium,
+    trapezium left angle=70,
+    trapezium right angle=110,
+    draw=#1!75!black,
+    fill=#1!8,
+    very thick,
+    align=center,
+    minimum height=12mm,
+    text width=30mm
+  },
+  product/.style={
+    rectangle,
+    rounded corners=2mm,
+    draw=#1!75!black,
+    fill=#1!10,
+    very thick,
+    align=center,
+    minimum height=14mm,
+    text width=35mm
+  },
+  note/.style={
+    rectangle,
+    rounded corners=1mm,
+    draw=black!25,
+    fill=black!3,
+    align=left,
+    inner sep=4pt,
+    text width=35mm
+  },
+  lane/.style={
+    rectangle,
+    rounded corners=2mm,
+    draw=black!18,
+    fill=black!2,
+    inner sep=6mm
+  },
+  arrow/.style={->, very thick, draw=black!70},
+  softarrow/.style={->, thick, draw=black!50},
+  dep/.style={->, thick, densely dashed, draw=black!45},
+  tag/.style={font=\scriptsize, fill=white, inner sep=1.4pt}
+]
+
+\definecolor{dataBlue}{HTML}{2563EB}
+\definecolor{modelTeal}{HTML}{0F766E}
+\definecolor{ragOrange}{HTML}{EA580C}
+\definecolor{llmViolet}{HTML}{6D28D9}
+\definecolor{outGreen}{HTML}{16A34A}
+
+% ==================== Offline lane ====================
+\node[data=dataBlue] (trainData) at (0, 0) {训练数据\\清洗与划分};
+\node[box=modelTeal] (trainBert) at (4.4, 1.25) {BERT 微调\\谣言/非谣言分类器};
+\node[box=ragOrange] (buildIndex) at (4.4, -1.25) {语义向量编码\\构建 FAISS 索引};
+\node[product=outGreen] (artifacts) at (9.0, 0) {离线产物\\BERT 权重\\FAISS 索引};
+
+\node[note] (trainNote) at (13.35, 0) {
+  训练策略：AdamW、余弦预热、标签平滑、早停；\\
+  检索模型：all-MiniLM-L6-v2。
+};
+
+\draw[arrow] (trainData.north east) -- (trainBert.west);
+\draw[arrow] (trainData.south east) -- (buildIndex.west);
+\draw[arrow] (trainBert.east) -- (artifacts.north west);
+\draw[arrow] (buildIndex.east) -- (artifacts.south west);
+\draw[softarrow] (artifacts.east) -- (trainNote.west);
+
+% ==================== Online lane ====================
+\node[data=dataBlue] (tweet) at (0, -6.1) {待检测推文\\URL/@ 用户清洗};
+\node[box=modelTeal] (predict) at (4.4, -6.1) {BERT 分类\\标签 + 置信度};
+\node[box=ragOrange] (evidence) at (9.0, -6.1) {证据增强\\注意力关键词\\Top-5 相似案例};
+\node[box=llmViolet] (explain) at (13.0, -6.1) {LLM 解释生成\\五维分析框架};
+\node[data=outGreen] (result) at (17.2, -6.1) {最终输出\\类别/置信度\\证据链/中文依据};
+
+\draw[arrow] (tweet) -- (predict);
+\draw[arrow] (predict) -- (evidence);
+\draw[arrow] (evidence) -- (explain);
+\draw[arrow] (explain) -- (result);
+
+\coordinate (loadHub) at (9.0, -3.45);
+\draw[dep] (artifacts.south) -- node[tag, right, pos=.58] {推理加载} (loadHub);
+\draw[dep] (loadHub) -| (predict.north);
+\draw[dep] (loadHub) -- (evidence.north);
+
+\node[note, text width=45mm] (explainNote) at (13.0, -8.25) {
+  LLM 输入：推文原文、预测结果、注意力证据词、RAG 检索案例。
+};
+\draw[softarrow] (explainNote.north) -- (explain.south);
+
+% ==================== Background lanes ====================
+\begin{scope}[on background layer]
+  \node[lane, fit=(trainData)(trainBert)(buildIndex)(artifacts)(trainNote)] (offline) {};
+  \node[lane, fit=(tweet)(predict)(evidence)(explain)(result)(explainNote)] (online) {};
+\end{scope}
+
+\node[anchor=west, font=\bfseries, text=black!72] at ([xshift=2mm,yshift=-3mm]offline.north west)
+  {离线训练与索引构建};
+\node[anchor=west, font=\bfseries, text=black!72] at ([xshift=2mm,yshift=-3mm]online.north west)
+  {在线推理与可解释输出};
+
+\end{tikzpicture}
