@@ -209,7 +209,7 @@ def single_prediction(text: str, device: str = None):
     print("预测结果")
     print("=" * 60)
     print(f"推文: {result['text'][:100]}...")
-    print(f"预测: {result['prediction_label']}")
+    print(f"预测: {result['prediction']} ({result['prediction_label']})")
     print(f"置信度: {result['confidence']:.2%}")
     print(f"关键证据: {', '.join(result['key_evidence'])}")
     print(f"\n判断依据:\n{result['explanation']}")

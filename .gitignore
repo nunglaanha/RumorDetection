@@ -6,3 +6,4 @@
 *.cache
 **/results/*
 **/models/*
+**/report_files/*

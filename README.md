@@ -6,15 +6,15 @@
 
 | 组件 | 技术选型 | 功能 |
 |------|---------|------|
-| **阶段一** | BERT (`bert-base-uncased`) | 推文二分类（谣言/非谣言），提取注意力权重 |
+| **阶段一** | BERT (`bert-large-uncased`) | 推文二分类（谣言/非谣言），提取注意力权重 |
 | **阶段二** | RAG检索：sentence-transformers + FAISS | 稠密语义检索，召回训练集中相似案例 |
 | **阶段三** | 交大本地 LLM API | 基于预测结果+检索案例，生成自然语言判断依据 |
 
 ### 输入/输出
 
 - **输入**：一条英文推文
-- **输出1**：二分类标签（0 = 非谣言，1 = 谣言）
-- **输出2**：中文自然语言判断依据解释
+- **输出1**：预测的二分类标签（0 非谣言/1 谣言）以及置信度
+- **输出2**：中文自然语言判断依据解释，包括由分类模型注意力提取的关键词和LLM得到的判断依据和理由
 
 ---
 
@@ -28,7 +28,7 @@
 | **GPU** | 可选（4GB+ VRAM） | NVIDIA RTX 3060 / 4060 及以上 |
 | **CUDA** | 可选 | CUDA 11.7+ |
 
-> **注意**：如果没有 GPU，BERT 训练和推理可以在 CPU 上运行，仅速度较慢（训练约 1 小时，推理每条约 50ms）。
+> **注意**：如果没有 GPU，BERT 训练和推理可以在 CPU 上运行，仅速度较慢（训练约 1 小时，推理每条约 50ms）
 
 ---
 
@@ -40,17 +40,54 @@
 cd RumorDetect
 ```
 
-### 2. 安装依赖
+### 2. 安装环境
+
+```bash
+conda create -n nis4302 python=3.10 -y
+conda activate nis4302
+```
+
+#### 2.1 安装 PyTorch（根据 CUDA 版本选择）
+
+先运行 `nvidia-smi` 查看 CUDA Version，然后根据下表选择对应命令：
+
+| nvidia-smi 显示 CUDA | pip install 命令 |
+|---|---|
+| CUDA 12.6 | `pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124` |
+| CUDA 12.4 / 12.5 | `pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124` |
+| CUDA 12.2 / 12.3 | `pip install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121` |
+| CUDA 12.1 | `pip install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu121` |
+| CUDA 11.8 | `pip install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu118` |
+| 无 GPU / 驱动过旧 | `pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu` |
+
+**说明**：CUDA 12.2/12.3 无专用 PyTorch 源，但 cu121 编译的二进制可向前兼容至 CUDA 12.3 driver。
+`.../whl/cu124` 源提供 torch 2.4.0 ~ 2.6.x，`.../whl/cu121` 源提供 torch 2.1.0 ~ 2.3.x。
+
+#### 2.2 安装其余依赖
+
+PyTorch 安装完成后，执行以下命令安装剩余依赖（pip 会自动跳过已安装的 torch）：
 
 ```bash
 pip install -r requirements.txt
 ```
 
-如果希望使用 GPU 加速 FAISS，请将FAISS替换为GPU版。注意安装时需要适配CUDA版本，这里以CUDA12版本为例：
-
+若无法连接PyPi源，请设置镜像源如下：
 ```bash
-pip install faiss-gpu-cu12
+pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 ```
+
+#### 2.3 HuggingFace 镜像设置
+
+训练 pipeline 将自动从 HuggingFace Hub 下载预训练模型，若无法访问可在安装前设置镜像源：
+```bash
+# Linux / macOS
+export HF_ENDPOINT=https://hf-mirror.com
+# Windows CMD
+set HF_ENDPOINT=https://hf-mirror.com
+# Windows PowerShell
+$env:HF_ENDPOINT="https://hf-mirror.com"
+```
+设置后 `transformers` 和 `sentence-transformers` 将自动从 `hf-mirror.com` 下载预训练模型。
 
 ### 3. 配置数据
 
@@ -60,13 +97,13 @@ pip install faiss-gpu-cu12
 |----|------|-------|-------|
 | 536824260615237632 | Swiss museum confirms... | 1 | 0 |
 
-#### 数据清洗
+#### 数据清洗（已完成，无需操作）
 
-原始训练集存在标签冲突（同一推文被标为不同标签），在训练前通过`data/data_conflict_detect.py`检查。
+原始训练集存在标签重复和冲突（同一文本被标为不同的谣言/非谣言标签），在训练前通过`data/data_conflict_detect.py`检查。
 
-若发现冲突，人工判断每条冲突的正确标签，通过`data/data_clean.py`生成清洗后的文件`train_cleaned.csv`.
+根据发现的冲突结果，人工判断每条冲突的正确标签，通过`data/data_clean.py`生成清洗后的文件`train_cleaned.csv`.
 
-清洗后将 `src/config.py` 中的 `TRAIN_PATH`设置为指向 `train_cleaned.csv`。
+清洗后将 `src/config.py` 中的 `TRAIN_PATH`设置为指向 `train_cleaned.csv`，训练时使用清洗后的数据
 
 ### 4. 配置交大API
 
@@ -74,13 +111,13 @@ pip install faiss-gpu-cu12
 
 ```bash
 # Linux / macOS
-export LLM_API_URL="https://models.sjtu.edu.cn/api/v1"
-export LLM_API_KEY="your-key-here"
+export LLM_API_URL="https://models.sjtu.edu.cn/api/v1/chat/completions"
+export LLM_API_KEY="your-actual-api-key"
 export LLM_MODEL_NAME="qwen3.5-27b"
 
 # Windows CMD
-set LLM_API_URL=https://models.sjtu.edu.cn/api/v1
-set LLM_API_KEY=your-key-here
+set LLM_API_URL=https://models.sjtu.edu.cn/api/v1/chat/completions
+set LLM_API_KEY=your-actual-api-key
 set LLM_MODEL_NAME=qwen3.5-27b
 
 # Windows PowerShell
@@ -94,74 +131,142 @@ $env:LLM_MODEL_NAME=qwen3.5-27b
 直接编辑 [src/config.py](src/config.py) 中的以下变量：
 
 ```python
-LLM_API_URL = "https://claw.sjtu.edu.cn/api/v1/chat/completions"
+LLM_API_URL = "https://models.sjtu.edu.cn/api/v1/chat/completions"
 LLM_API_KEY = "your-actual-api-key"
 LLM_MODEL_NAME = "qwen3.5-27b"
 ```
-> 如果未配置 API，系统会使用内置的模板化解释作为降级方案，不影响分类功能。
+如果未配置 API，系统会使用内置的模板化解释作为降级方案，不影响分类功能。
 
+## 5. 手动下载预训练模型（自动下载失败备用）
 
----
-
-## 5. 手动下载预训练模型（可选）
-
-训练和推理需要加载两个预训练模型。代码会在首次运行时自动从 HuggingFace Hub 下载，并缓存到 `models/pretrained/` 目录。如果服务器无法访问 HuggingFace，请按以下步骤手动下载。
+训练和推理需要加载两个预训练模型。代码会在首次运行时自动从 HuggingFace Hub 下载并缓存。如果服务器无法访问HuggingFace，可先设置通过下方的手动方式下载。
 
 ### 需要下载的模型
 
-| 模型 | 用途 | 大小 | 本地缓存路径 |
+| 模型 | 用途 | 大小 | 本地存放路径 |
 |------|------|-------|-------------|
-| `bert-base-uncased`和 'bert-large' | BERT 谣言分类器 | 约440 MB | `models/pretrained/` （由 `HF_HOME` 环境变量指定，见 [config.py](src/config.py#L21)） |
-| `all-MiniLM-L6-v2` | RAG 语义嵌入 | 约80 MB | `models/sentence_transformer/` |
+| `bert-large-uncased` | BERT 谣言分类器 | 约1.3G | `models/pretrained/` （由 `HF_HOME` 指向，见 [config.py](src/config.py#L21)） |
+| `all-MiniLM-L6-v2` | RAG 语义嵌入模型 | 约80 MB | `models/sentence_transformer/` |
 
-### 在**有外网**的机器上执行以下脚本
+### 下载操作
+将以下python代码保存为 `download_models_hf.py` 放在项目根目录，然后执行：
+
+```bash
+cd RumorDetect
+python download_models_hf.py
+```
 
 ```python
-# download_models.py
-"""在有外网的环境运行此脚本，然后将 models/ 目录打包上传到服务器。"""
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parent
+
+import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
+# ---------- 1. 下载 BERT ----------
+from transformers import AutoModel, AutoTokenizer
+
+print("正在下载 bert-large-uncased ...")
+AutoModel.from_pretrained(
+    "bert-large-uncased",
+    cache_dir=str(project_root / "models" / "pretrained"),
+)
+AutoTokenizer.from_pretrained(
+    "bert-large-uncased",
+    cache_dir=str(project_root / "models" / "pretrained"),
+)
+print("[OK] bert-large-uncased 已缓存到 models/pretrained/")
+
+# ---------- 2. 下载 Sentence Transformer ----------
+from sentence_transformers import SentenceTransformer
+
+print("正在下载 all-MiniLM-L6-v2 ...")
+model = SentenceTransformer("all-MiniLM-L6-v2")
+save_path = str(project_root / "models" / "sentence_transformer")
+model.save(save_path)
+print(f"[OK] all-MiniLM-L6-v2 已保存到 {save_path}/")
+```
+
+**说明**：`model.save()` 将模型文件平铺在目标目录下（`config.json`、`0_Transformer/` 等），与 `DenseRetriever` 的 `SentenceTransformer(local_path)` 加载方式匹配。
+
+### 方式二：通过 ModelScope 下载（HuggingFace 不可用时备选）
+
+```bash
+pip install modelscope
+```
+
+将以下内容保存为 `download_models_ms.py` 放在项目根目录，然后执行：
+
+```bash
+cd RumorDetect
+python download_models_ms.py
+```
+
+```python
 from pathlib import Path
 import os
 
 project_root = Path(__file__).resolve().parent
 
+# 跳过不必要的文件格式（ONNX 等），大幅减少下载量
+IGNORE_PATTERNS = ["*.onnx", "*.ot", "*.msgpack", "*.h5", "flax_model.*"]
+
 # ---------- 1. 下载 BERT ----------
-os.environ["HF_HOME"] = str(project_root / "models" / "pretrained")
+from modelscope import snapshot_download
 from transformers import AutoModel, AutoTokenizer
 
-AutoModel.from_pretrained("bert-base-uncased")
-AutoTokenizer.from_pretrained("bert-base-uncased")
-print("[OK] bert-base-uncased 已下载到 models/pretrained/")
+print("从 ModelScope 下载 bert-large-uncased ...")
+snapshot_download(
+    "google-bert/bert-large-uncased",
+    cache_dir=str(project_root / "models" / "pretrained"),
+    ignore_file_pattern=IGNORE_PATTERNS,
+)
+# 将下载的模型同步到 HuggingFace 缓存中（transformers 通过 HF_HOME 查找）
+os.environ["HF_HOME"] = str(project_root / "models" / "pretrained")
+AutoModel.from_pretrained("bert-large-uncased")
+AutoTokenizer.from_pretrained("bert-large-uncased")
+print("[OK] bert-large-uncased 已就绪到 models/pretrained/")
 
 # ---------- 2. 下载 Sentence Transformer ----------
 from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer(
-    "all-MiniLM-L6-v2",
-    cache_folder=str(project_root / "models" / "sentence_transformer")
+print("从 ModelScope 下载 all-MiniLM-L6-v2 ...")
+model_dir = snapshot_download(
+    "sentence-transformers/all-MiniLM-L6-v2",
+    ignore_file_pattern=IGNORE_PATTERNS + ["model.onnx"],
 )
-print("[OK] all-MiniLM-L6-v2 已下载到 models/sentence_transformer/")
+model = SentenceTransformer(model_dir)
+save_path = str(project_root / "models" / "sentence_transformer")
+model.save(save_path)
+print(f"[OK] all-MiniLM-L6-v2 已保存到 {save_path}/")
 ```
 
-### 在服务器上放置
+**说明**：`ignore_file_pattern` 跳过 ONNX、Flax、TensorFlow 等非 PyTorch 格式文件，只下载 PyTorch 所需的权重和配置文件。这对下载速度有明显提升，且不影响代码正常运行。
 
-将下载好的 `models/` 目录整体上传到项目根目录即可，目录结构应与下列一致：
+### 检查models文件放置路径
+
+将下载好的 `models/` 目录整体上传到项目根目录即可，理论上目录结构应与下列一致，若有不同请手动调整：
 
 ```
 RumorDetect/
 └── models/
     ├── pretrained/                      # BERT 缓存（HF_HOME 指向这里）
     │   └── hub/
-    │       ├── models--bert-base-uncased/
+    │       ├── models--bert-large-uncased/
     │       │   ├── blobs/              # 模型权重文件
     │       │   └── refs/               # 版本引用
     │       └── ...
-    └── sentence_transformer/            # all-MiniLM-L6-v2 缓存
-        └── models--sentence-transformers--all-MiniLM-L6-v2/
-            ├── blobs/
-            └── snapshots/
+    └── sentence_transformer/            # all-MiniLM-L6-v2
+        ├── config.json
+        ├── modules.json
+        ├── sentence_bert_config.json
+        ├── 0_Transformer/
+        ├── 1_Pooling/
+        └── 2_Normalize/
 ```
 
-> **注意**：如果手动放置了模型缓存，训练时 `transformers` 和 `sentence-transformers` 检测到本地缓存已存在，就不会再尝试联网下载。
+**注意**：如果手动放置了模型缓存，训练时 `transformers` 和 `sentence-transformers` 检测到本地缓存已存在，就不会再尝试联网下载。
 ---
 
 ## 训练模型
@@ -242,13 +347,13 @@ RumorDetect - 验证集评估
 加载模型 (设备: cuda)...
 加载稠密检索器...
 初始化解释生成器...
+
 推理引擎初始化完成！
+批量推理: 100%|██████████████████████████████████████████████████████████████| 401/401 [00:18<00:00, 21.99it/s]
 
-批量推理: 100%|████████████| 401/401 [02:15<00:00,  2.96it/s]
-
-验证集准确率: 0.8279 (332/401)
-结果已保存至: results\val_predictions.json
-CSV 结果已保存至: results\val_predictions.csv
+验证集准确率: 0.8803 (353/401)
+结果已保存至: RumorDetection/results/val_predictions.json
+CSV 结果已保存至: RumorDetection/results/val_predictions.csv
 ```
 
 ---
@@ -279,8 +384,6 @@ python -m src.pipeline --stage predict --text "BREAKING: Government officials ha
 因此判定为非谣言。
 ```
 
----
-
 ## 运行全部流程
 
 按顺序自动运行训练 + 评估 + 示例预测：
@@ -297,7 +400,7 @@ python -m src.pipeline --stage all
 RumorDetect/
 ├── data/                              # 数据集
 │   ├── train.csv                      # 原始训练集 (2840条)
-│   ├── train_cleaned.csv              # 清洗后的训练集 (2839条)
+│   ├── train_cleaned.csv              # 清洗后的训练集 (2791条)
 │   ├── val.csv                        # 验证集 (401条)
 │   ├── data_conflict_detect.py        # 标签冲突检测脚本
 │   └── data_clean.py                  # 数据清洗脚本
@@ -351,7 +454,7 @@ RumorDetect/
 
 - **功能**：
   - `BertRumorClassifier`：BERT → Dropout → Linear 分类头
-  - 通过 PyTorch forward hook 捕获最后一层注意力权重
+  - 通过 `output_attentions=True` 获取最后一层注意力权重
   - `get_important_tokens()`：从注意力权重提取模型重点关注的关键词
   - 支持模型保存和加载（BERT 权重 + 分类头分离）
 - **注意力提取机制**：作为模型可解释性的一部分，对 [CLS] token 的注意力分数在各注意力头上取平均，排除特殊 token 后取 top-k
@@ -399,7 +502,7 @@ RumorDetect/
 
 #### [src/pipeline.py](src/pipeline.py) - 流水线入口
 
-- **功能**：统一命令行入口，支持 `train` / `eval` / `predict` / `all` 四种模式
+- **功能**：统一命令行入口，支持 `train` / `eval` / `predict` / `all` / `tune` / `threshold` 六种模式
 
 #### [src/threshold_tune.py](src/threshold_tune.py) - 阈值调优脚本
 
@@ -427,8 +530,5 @@ RumorDetect/
   - `optuna_best_params.json`：最佳参数组合
   - `optuna_trials.csv`：全部 trial 的详细记录
 - **命令行**：`python -m src.tune --device cuda --trials 20 --tune-epochs 3`
-
----
-
 
 ---
