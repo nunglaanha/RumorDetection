@@ -15,13 +15,13 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import (
-    BERT_MODEL_NAME, BERT_MODEL_PATH, BERT_TOKENIZER_PATH,
+    BERT_MODEL_NAME, BERT_MODEL_PATH, BERT_TOKENIZER_PATH, PRETRAINED_BERT_PATH,
     FAISS_INDEX_PATH, RESULTS_DIR, EPOCHS, LEARNING_RATE, WEIGHT_DECAY,
     WARMUP_RATIO, EARLY_STOPPING_PATIENCE, RANDOM_SEED, MAX_SEQ_LENGTH,
     get_device, describe_torch_devices
 )
 from src.data_processor import get_data_loaders, load_csv_data
-from src.bert_classifier import BertRumorClassifier, save_model
+from src.bert_classifier import BertRumorClassifier, save_model, ensure_bert_model
 from src.dense_retriever import build_faiss_index
 
 
@@ -131,11 +131,12 @@ def main(device_name: str = None):
     print(f"  训练集: {len(train_loader.dataset)} 条")
     print(f"  验证集: {len(val_loader.dataset)} 条")
 
-    # 2. 初始化模型
+    # 2. 初始化模型（从本地路径加载，不存在则自动下载）
     print("\n[2/5] 初始化BERT模型...")
-    model = BertRumorClassifier(model_name=BERT_MODEL_NAME)
+    bert_local_path = ensure_bert_model(str(PRETRAINED_BERT_PATH), BERT_MODEL_NAME)
+    model = BertRumorClassifier(model_name=bert_local_path)
     model.to(device)
-    tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(bert_local_path)
 
     # 3. 设置优化器和学习率调度器
     print("\n[3/5] 设置优化器...")

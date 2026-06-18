@@ -1,13 +1,14 @@
 """
 BERT分类器 - 基于BERT的谣言检测模型，支持注意力权重提取
 """
+import os
 import torch
 import torch.nn as nn
 import numpy as np
 from transformers import AutoModel, AutoConfig
 from typing import Tuple, List, Optional
 
-from src.config import BERT_MODEL_NAME, NUM_LABELS, MAX_SEQ_LENGTH
+from src.config import BERT_MODEL_NAME, PRETRAINED_BERT_PATH, NUM_LABELS, MAX_SEQ_LENGTH
 
 
 class BertRumorClassifier(nn.Module):
@@ -132,6 +133,36 @@ class BertRumorClassifier(nn.Module):
             results.append(top_tokens)
 
         return results
+
+
+def ensure_bert_model(local_path: str = None, model_id: str = BERT_MODEL_NAME) -> str:
+    """
+    检查本地路径是否存在 BERT 模型，不存在则自动下载到本地。
+
+    参数:
+        local_path: 本地存放路径，默认使用 PRETRAINED_BERT_PATH
+        model_id: HuggingFace 模型名称
+
+    返回:
+        可用的本地模型路径
+    """
+    if local_path is None:
+        local_path = str(PRETRAINED_BERT_PATH)
+
+    config_path = os.path.join(local_path, "config.json")
+    if not os.path.isdir(local_path) or not os.path.exists(config_path):
+        print(f"本地模型未找到，正在从 HuggingFace 下载 {model_id} 到 {local_path} ...")
+        from huggingface_hub import snapshot_download
+        os.makedirs(local_path, exist_ok=True)
+        snapshot_download(
+            model_id,
+            local_dir=local_path,
+            ignore_patterns=["*.h5", "*.ot", "*.onnx", "*.msgpack", "flax_model.*"],
+        )
+        print(f"[OK] {model_id} 已下载到 {local_path}")
+    else:
+        print(f"本地模型已存在: {local_path}")
+    return local_path
 
 
 def save_model(model: BertRumorClassifier, tokenizer, save_path: str):

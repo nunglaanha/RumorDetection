@@ -10,9 +10,10 @@ from typing import List, Tuple, Optional, Dict
 from pathlib import Path
 
 from src.config import (
-    TRAIN_PATH, VAL_PATH, BERT_MODEL_NAME,
+    TRAIN_PATH, VAL_PATH, BERT_MODEL_NAME, PRETRAINED_BERT_PATH,
     MAX_SEQ_LENGTH, BATCH_SIZE, EVAL_BATCH_SIZE, RANDOM_SEED
 )
+from src.bert_classifier import ensure_bert_model
 
 
 def clean_text(text: str) -> str:
@@ -81,7 +82,8 @@ def get_data_loaders(
     eval_batch_size: int = EVAL_BATCH_SIZE,
     max_len: int = MAX_SEQ_LENGTH,
 ) -> Tuple[DataLoader, DataLoader, Dict]:
-    tokenizer = AutoTokenizer.from_pretrained(BERT_MODEL_NAME)
+    local_path = ensure_bert_model(str(PRETRAINED_BERT_PATH), BERT_MODEL_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(local_path)
 
     train_ids, train_texts, train_labels, train_events = load_csv_data(train_path) # 加载训练集
 
@@ -119,6 +121,8 @@ def get_data_loaders(
     return train_loader, val_loader, extra_info
 
 
-def get_tokenizer(model_name: str = BERT_MODEL_NAME):
-    """获取分词器"""
-    return AutoTokenizer.from_pretrained(model_name)
+def get_tokenizer(model_name: str = BERT_MODEL_NAME, local_path: str = None):
+    """获取分词器，优先从本地路径加载"""
+    if local_path is None:
+        local_path = ensure_bert_model(str(PRETRAINED_BERT_PATH), model_name)
+    return AutoTokenizer.from_pretrained(local_path)

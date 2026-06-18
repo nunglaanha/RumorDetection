@@ -15,7 +15,7 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import (
-    BERT_MODEL_NAME, EVAL_BATCH_SIZE, MAX_SEQ_LENGTH, RANDOM_SEED,
+    BERT_MODEL_NAME, PRETRAINED_BERT_PATH, EVAL_BATCH_SIZE, MAX_SEQ_LENGTH, RANDOM_SEED,
     RESULTS_DIR, describe_torch_devices, get_device
 )
 
@@ -156,7 +156,7 @@ def run_tuning(
     from torch.optim import AdamW
     from transformers import get_linear_schedule_with_warmup
 
-    from src.bert_classifier import BertRumorClassifier
+    from src.bert_classifier import BertRumorClassifier, ensure_bert_model
     from src.data_processor import get_data_loaders as default_get_data_loaders
     from src.train import evaluate, set_seed, train_epoch
 
@@ -182,6 +182,10 @@ def run_tuning(
     if device.type == "cuda":
         print(f"CUDA 设备: {torch.cuda.get_device_name(device)}")
     print(f"模型: {model_name}")
+
+    # 解析模型本地路径，不存在则自动下载
+    model_local_path = ensure_bert_model(str(PRETRAINED_BERT_PATH), model_name)
+
     print(f"目标指标: val_{metric}")
     print(f"trial 数量: {n_trials}")
     print(f"每个 trial 最大 epoch: {max_epochs}")
@@ -214,7 +218,7 @@ def run_tuning(
                 eval_batch_size=max(eval_batch_size, batch_size),
                 max_len=max_seq_length,
             )
-            model = model_class(model_name=model_name)
+            model = model_class(model_name=model_local_path)
             model.to(device)
 
             optimizer = AdamW(

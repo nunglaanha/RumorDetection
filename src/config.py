@@ -17,8 +17,9 @@ TRAIN_PATH = DATA_DIR / "train_cleaned.csv"
 VAL_PATH = DATA_DIR / "val.csv"
 
 # ================ 直接下载的预训练模型保存路径 =============
-# 包括原始BERT模型 bert-base-uncased 和 用于RAG的嵌入模型 all-MiniLM-L6-v2
+# 包括原始BERT模型 bert-large-uncased 和 用于RAG的嵌入模型 all-MiniLM-L6-v2
 os.environ["HF_HOME"] = os.path.join(PROJECT_ROOT, "models", "pretrained")
+PRETRAINED_BERT_PATH = MODEL_DIR / "pretrained" / "bert-large-uncased"
 
 # ==================== 微调后模型保存路径 ====================
 BERT_MODEL_PATH = MODEL_DIR / "bert_rumor_classifier"

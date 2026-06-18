@@ -45,8 +45,8 @@ cd RumorDetect
 ### 2. 安装环境
 
 ```bash
-conda create -n nis4302 python=3.10 -y
-conda activate nis4302
+conda create -n nis4307 python=3.10 -y
+conda activate nis4307
 ```
 
 #### 2.1 安装 PyTorch（根据 CUDA 版本选择）
@@ -78,9 +78,9 @@ pip install -r requirements.txt
 pip install -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
 ```
 
-#### 2.3 HuggingFace 镜像设置
+#### 2.3 HuggingFace 镜像设置（可选）
 
-训练 pipeline 将自动从 HuggingFace Hub 下载预训练模型，若无法访问可在安装前设置镜像源：
+若无法访问 HuggingFace Hub，可在安装前设置镜像源：
 ```bash
 # Linux / macOS
 export HF_ENDPOINT=https://hf-mirror.com
@@ -141,25 +141,37 @@ LLM_MODEL_NAME = "qwen3.5-27b"
 
 ## 5. 手动下载预训练模型（自动下载失败备用）
 
-训练和推理需要加载两个预训练模型。代码会在首次运行时自动从 HuggingFace Hub 下载并缓存。如果服务器无法访问HuggingFace，可先设置通过下方的手动方式下载。
+训练和推理需要加载两个预训练模型。代码会在首次运行时自动检查本地路径，若不存在则自动从 HuggingFace Hub 下载。如果服务器无法访问 HuggingFace，可先通过下方的方式手动下载。
 
 ### 需要下载的模型
 
 | 模型 | 用途 | 大小 | 本地存放路径 |
 |------|------|-------|-------------|
-| `bert-large-uncased` | BERT 谣言分类器 | 约1.3G | `models/pretrained/` （由 `HF_HOME` 指向，见 [config.py](src/config.py#L21)） |
+| `bert-large-uncased` | BERT 谣言分类器 | 约1.3G | `models/pretrained/bert-large-uncased/` |
 | `all-MiniLM-L6-v2` | RAG 语义嵌入模型 | 约80 MB | `models/sentence_transformer/` |
 
 ### 方式一：通过 HuggingFace 下载（推荐）
-将以下python代码保存为 `download_models_hf.py` 放在项目根目录，然后执行：
+将以下 python 代码保存为 `download_models_hf.py` 放在项目根目录，然后执行：
 
 ```bash
 cd RumorDetect
+
+# 手动设置环境变量
+# Linux / macOS
+export HF_ENDPOINT=https://hf-mirror.com
+# Windows CMD
+set HF_ENDPOINT=https://hf-mirror.com
+# Windows PowerShell
+$env:HF_ENDPOINT="https://hf-mirror.com"
+
+# 运行安装脚本
 python download_models_hf.py
 ```
 
-```python
+```python 
+# download_models_hf.py
 from pathlib import Path
+from huggingface_hub import snapshot_download
 
 project_root = Path(__file__).resolve().parent
 
@@ -167,18 +179,13 @@ import os
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # ---------- 1. 下载 BERT ----------
-from transformers import AutoModel, AutoTokenizer
-
 print("正在下载 bert-large-uncased ...")
-AutoModel.from_pretrained(
+snapshot_download(
     "bert-large-uncased",
-    cache_dir=str(project_root / "models" / "pretrained"),
+    local_dir=str(project_root / "models" / "pretrained" / "bert-large-uncased"),
+    ignore_patterns=["*.h5", "*.ot", "*.onnx", "*.msgpack", "flax_model.*"],
 )
-AutoTokenizer.from_pretrained(
-    "bert-large-uncased",
-    cache_dir=str(project_root / "models" / "pretrained"),
-)
-print("[OK] bert-large-uncased 已缓存到 models/pretrained/")
+print("[OK] bert-large-uncased 已下载到 models/pretrained/bert-large-uncased/")
 
 # ---------- 2. 下载 Sentence Transformer ----------
 from sentence_transformers import SentenceTransformer
@@ -197,7 +204,7 @@ print(f"[OK] all-MiniLM-L6-v2 已保存到 {save_path}/")
 pip install modelscope
 ```
 
-将以下内容保存为 `download_models_ms.py` 放在项目根目录，然后执行：
+将以下python代码保存为 `download_models_ms.py` 放在项目根目录，然后执行：
 
 ```bash
 cd RumorDetect
@@ -205,29 +212,25 @@ python download_models_ms.py
 ```
 
 ```python
+# download_models_ms.py
 from pathlib import Path
 import os
 
 project_root = Path(__file__).resolve().parent
 
-# 跳过不必要的文件格式（ONNX 等），大幅减少下载量
+# 跳过不必要的文件格式
 IGNORE_PATTERNS = ["*.onnx", "*.ot", "*.msgpack", "*.h5", "flax_model.*"]
 
 # ---------- 1. 下载 BERT ----------
 from modelscope import snapshot_download
-from transformers import AutoModel, AutoTokenizer
 
 print("从 ModelScope 下载 bert-large-uncased ...")
-model_dir = snapshot_download("google-bert/bert-base-uncased", 
-    cache_dir=str(project_root / "models" / "pretrained_hub"),
-    ignore_file_pattern=IGNORE_PATTERNS)
-# 将下载的模型同步到 HuggingFace 缓存中（transformers 通过 HF_HOME 查找）
-model = AutoModel.from_pretrained(model_dir)
-tokenizer = AutoTokenizer.from_pretrained(model_dir)
-os.environ["HF_HOME"] = str(project_root / "models" / "pretrained")
-model.save_pretrained("bert-base-uncased") 
-tokenizer.save_pretrained("bert-base-uncased")
-print("[OK] bert-large-uncased 已就绪到 models/pretrained/")
+snapshot_download(
+    "google-bert/bert-large-uncased",
+    local_dir=str(project_root / "models" / "pretrained" / "bert-large-uncased"),
+    ignore_file_pattern=IGNORE_PATTERNS,
+)
+print("[OK] bert-large-uncased 已下载到 models/pretrained/bert-large-uncased/")
 
 # ---------- 2. 下载 Sentence Transformer ----------
 from sentence_transformers import SentenceTransformer
@@ -245,18 +248,18 @@ print(f"[OK] all-MiniLM-L6-v2 已保存到 {save_path}/")
 
 > **说明**：`ignore_file_pattern` 跳过 ONNX、Flax、TensorFlow 等非 PyTorch 格式文件，只下载 PyTorch 所需的权重和配置文件。这对下载速度有明显提升，且不影响代码正常运行。
 
-### 检查models文件放置路径
+### 检查 models 文件放置路径
 
-将下载好的 `models/` 目录整体上传到项目根目录即可，理论上目录结构应与下列一致，若有不同请手动调整，特别是通过**ModelScope**：
+将下载好的 `models/` 目录整体上传到项目根目录即可，目录结构应与下列一致：
 
 ```
 RumorDetect/
 └── models/
-    ├── pretrained/                      # BERT 缓存（HF_HOME 指向这里）
-    │   └── hub/
-    │       ├── models--bert-large-uncased/
-    │       │   ├── blobs/              # 模型权重文件
-    │       │   └── refs/               # 版本引用
+    ├── pretrained/
+    │   └── bert-large-uncased/          # BERT 预训练模型（扁平目录）
+    │       ├── config.json
+    │       ├── model.safetensors        # 或 pytorch_model.bin
+    │       ├── tokenizer.json
     │       └── ...
     └── sentence_transformer/            # all-MiniLM-L6-v2
         ├── config.json
@@ -267,7 +270,7 @@ RumorDetect/
         └── 2_Normalize/
 ```
 
-> **注意**：如果手动放置了模型缓存，训练时 `transformers` 和 `sentence-transformers` 检测到本地缓存已存在，就不会再尝试联网下载。
+> **注意**：如果手动放置了模型文件，训练时代码检测到 `models/pretrained/bert-large-uncased/config.json` 已存在，就不会再触发联网下载。
 
 ---
 
@@ -408,9 +411,8 @@ RumorDetect/
 │   └── data_clean.py                  # 数据清洗脚本
 │
 ├── models/                            # 训练产出的模型文件（运行后生成）
-│   ├── pretrained/                    # HuggingFace 预训练模型缓存路径
-│   │   ├── hub/                       # 预训练模型文件
-│   │   └── ...                        #
+│   ├── pretrained/                    # 预训练模型本地路径
+│   │   └── bert-large-uncased/        # BERT 预训练模型（自动下载到此目录）
 │   ├── bert_rumor_classifier/         # 微调后的BERT模型
 │   ├── dense_index.faiss              # FAISS稠密检索索引
 │   └── sentence_transformer/          # 嵌入模型缓存
