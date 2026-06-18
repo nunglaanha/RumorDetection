@@ -1,10 +1,10 @@
 # RumorDetect: 可解释的谣言检测系统
 
-基于 **BERT 微调 + 稠密检索增强 (RAG) + 大语言模型解释生成** 的三阶段复合架构，实现对社交媒体推文的谣言检测与可解释性分析。
+基于 **BERT 微调 + RAG + 大语言模型解释生成** 的三阶段复合架构，实现对社交媒体推文的谣言检测与可解释性分析。
 
 ## 项目概述
 
-| 组件 | 技术选型 | 功能 |
+| 阶段 | 技术 | 功能 |
 |------|---------|------|
 | **阶段一** | BERT (`bert-large-uncased`) | 推文二分类（谣言/非谣言），提取注意力权重 |
 | **阶段二** | RAG检索：sentence-transformers + FAISS | 稠密语义检索，召回训练集中相似案例 |
@@ -14,7 +14,9 @@
 
 - **输入**：一条英文推文
 - **输出1**：预测的二分类标签（0 非谣言/1 谣言）以及置信度
-- **输出2**：中文自然语言判断依据解释，包括由分类模型注意力提取的关键词和LLM得到的判断依据和理由
+- **输出2**：中文自然语言判断依据解释，包括
+  - 由分类模型注意力提取的关键词
+  - LLM得到的判断依据和理由
 
 ---
 
@@ -26,7 +28,7 @@
 | **Python** | 3.8+ | 3.10+ |
 | **内存** | 8 GB | 16 GB |
 | **GPU** | 可选（4GB+ VRAM） | NVIDIA RTX 3060 / 4060 及以上 |
-| **CUDA** | 可选 | CUDA 11.7+ |
+| **CUDA** | 可选 | CUDA 11.8+ |
 
 > **注意**：如果没有 GPU，BERT 训练和推理可以在 CPU 上运行，仅速度较慢（训练约 1 小时，推理每条约 50ms）
 
@@ -60,7 +62,7 @@ conda activate nis4302
 | CUDA 11.8 | `pip install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cu118` |
 | 无 GPU / 驱动过旧 | `pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu` |
 
-**说明**：CUDA 12.2/12.3 无专用 PyTorch 源，但 cu121 编译的二进制可向前兼容至 CUDA 12.3 driver。
+> **说明**：CUDA 12.2/12.3 无专用 PyTorch 源，但 cu121 编译的二进制可向前兼容至 CUDA 12.3 driver。
 `.../whl/cu124` 源提供 torch 2.4.0 ~ 2.6.x，`.../whl/cu121` 源提供 torch 2.1.0 ~ 2.3.x。
 
 #### 2.2 安装其余依赖
@@ -148,7 +150,7 @@ LLM_MODEL_NAME = "qwen3.5-27b"
 | `bert-large-uncased` | BERT 谣言分类器 | 约1.3G | `models/pretrained/` （由 `HF_HOME` 指向，见 [config.py](src/config.py#L21)） |
 | `all-MiniLM-L6-v2` | RAG 语义嵌入模型 | 约80 MB | `models/sentence_transformer/` |
 
-### 下载操作
+### 方式一：通过 HuggingFace 下载（推荐）
 将以下python代码保存为 `download_models_hf.py` 放在项目根目录，然后执行：
 
 ```bash
@@ -188,7 +190,6 @@ model.save(save_path)
 print(f"[OK] all-MiniLM-L6-v2 已保存到 {save_path}/")
 ```
 
-**说明**：`model.save()` 将模型文件平铺在目标目录下（`config.json`、`0_Transformer/` 等），与 `DenseRetriever` 的 `SentenceTransformer(local_path)` 加载方式匹配。
 
 ### 方式二：通过 ModelScope 下载（HuggingFace 不可用时备选）
 
@@ -217,15 +218,15 @@ from modelscope import snapshot_download
 from transformers import AutoModel, AutoTokenizer
 
 print("从 ModelScope 下载 bert-large-uncased ...")
-snapshot_download(
-    "google-bert/bert-large-uncased",
-    cache_dir=str(project_root / "models" / "pretrained"),
-    ignore_file_pattern=IGNORE_PATTERNS,
-)
+model_dir = snapshot_download("google-bert/bert-base-uncased", 
+    cache_dir=str(project_root / "models" / "pretrained_hub"),
+    ignore_file_pattern=IGNORE_PATTERNS)
 # 将下载的模型同步到 HuggingFace 缓存中（transformers 通过 HF_HOME 查找）
+model = AutoModel.from_pretrained(model_dir)
+tokenizer = AutoTokenizer.from_pretrained(model_dir)
 os.environ["HF_HOME"] = str(project_root / "models" / "pretrained")
-AutoModel.from_pretrained("bert-large-uncased")
-AutoTokenizer.from_pretrained("bert-large-uncased")
+model.save_pretrained("bert-base-uncased") 
+tokenizer.save_pretrained("bert-base-uncased")
 print("[OK] bert-large-uncased 已就绪到 models/pretrained/")
 
 # ---------- 2. 下载 Sentence Transformer ----------
@@ -242,11 +243,11 @@ model.save(save_path)
 print(f"[OK] all-MiniLM-L6-v2 已保存到 {save_path}/")
 ```
 
-**说明**：`ignore_file_pattern` 跳过 ONNX、Flax、TensorFlow 等非 PyTorch 格式文件，只下载 PyTorch 所需的权重和配置文件。这对下载速度有明显提升，且不影响代码正常运行。
+> **说明**：`ignore_file_pattern` 跳过 ONNX、Flax、TensorFlow 等非 PyTorch 格式文件，只下载 PyTorch 所需的权重和配置文件。这对下载速度有明显提升，且不影响代码正常运行。
 
 ### 检查models文件放置路径
 
-将下载好的 `models/` 目录整体上传到项目根目录即可，理论上目录结构应与下列一致，若有不同请手动调整：
+将下载好的 `models/` 目录整体上传到项目根目录即可，理论上目录结构应与下列一致，若有不同请手动调整，特别是通过**ModelScope**：
 
 ```
 RumorDetect/
@@ -266,7 +267,8 @@ RumorDetect/
         └── 2_Normalize/
 ```
 
-**注意**：如果手动放置了模型缓存，训练时 `transformers` 和 `sentence-transformers` 检测到本地缓存已存在，就不会再尝试联网下载。
+> **注意**：如果手动放置了模型缓存，训练时 `transformers` 和 `sentence-transformers` 检测到本地缓存已存在，就不会再尝试联网下载。
+
 ---
 
 ## 训练模型
